@@ -1,33 +1,34 @@
 import React, { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import MenuItemCard from './MenuItemCard';
 import Hero from './Hero';
-import ProductDetailModal from './ProductDetailModal';
 import type { Product, ProductVariation, CartItem } from '../types';
-import { Search, Filter, Package } from 'lucide-react';
+import { Search, ChevronDown, Package } from 'lucide-react';
 import { useGlobalDiscount } from '../hooks/useGlobalDiscount';
 
 interface MenuProps {
   menuItems: Product[];
+  loading?: boolean;
   addToCart: (product: Product, variation?: ProductVariation, quantity?: number, priceOverride?: number) => void;
   cartItems: CartItem[];
   updateQuantity: (index: number, quantity: number) => void;
 }
 
-const Menu: React.FC<MenuProps> = ({ menuItems, addToCart, cartItems }) => {
+const Menu: React.FC<MenuProps> = ({ menuItems, loading = false, addToCart, cartItems }) => {
   const { globalDiscount } = useGlobalDiscount();
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'price' | 'purity'>('name');
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const productsRef = useRef<HTMLDivElement | null>(null);
 
-  // Filter products based on search
   const filteredProducts = menuItems.filter(product =>
     product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     product.description.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Sort products
   const sortedProducts = [...filteredProducts].sort((a, b) => {
+    if (a.featured && !b.featured) return -1;
+    if (!a.featured && b.featured) return 1;
     switch (sortBy) {
       case 'name':
         return a.name.localeCompare(b.name);
@@ -40,6 +41,12 @@ const Menu: React.FC<MenuProps> = ({ menuItems, addToCart, cartItems }) => {
     }
   });
 
+  const sortLabels: Record<typeof sortBy, string> = {
+    name: 'Most Popular',
+    price: 'Lowest Price',
+    purity: 'Highest Purity',
+  };
+
   const getCartQuantity = (productId: string, variationId?: string) => {
     return cartItems
       .filter(item =>
@@ -49,72 +56,86 @@ const Menu: React.FC<MenuProps> = ({ menuItems, addToCart, cartItems }) => {
       .reduce((sum, item) => sum + item.quantity, 0);
   };
 
+  const handleProductClick = (product: Product) => {
+    if (product.slug) {
+      navigate(`/${product.slug}`);
+    }
+  };
+
   return (
     <>
-      {selectedProduct && (
-        <ProductDetailModal
-          product={selectedProduct}
-          onClose={() => setSelectedProduct(null)}
-          onAddToCart={(product, variation, quantity, priceOverride) => {
-            addToCart(product, variation, quantity, priceOverride);
-          }}
-          globalDiscount={globalDiscount}
-        />
-      )}
-
-      <div className="min-h-screen bg-theme-bg">
+      <div className="min-h-screen" style={{ background: 'linear-gradient(180deg, #FFFFFF 0%, #FFFCF6 100%)' }}>
         <Hero
           onShopAll={() => {
             productsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
           }}
         />
 
-        <div className="container mx-auto px-4 py-8" ref={productsRef}>
-          {/* Search and Filter Controls */}
-          <div className="mb-8 flex flex-col sm:flex-row gap-4">
-            {/* Search Bar */}
-            <div className="flex-1 relative">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Search products..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 text-base border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-theme-accent focus:border-theme-accent transition-all bg-white"
-              />
-            </div>
-
-            {/* Sort Dropdown */}
-            <div className="flex items-center gap-3 sm:w-auto bg-white rounded-lg px-4 py-3 border border-gray-200">
-              <Filter className="text-gray-500 w-5 h-5" />
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as 'name' | 'price' | 'purity')}
-                className="focus:outline-none bg-transparent font-medium text-theme-text text-sm"
-              >
-                <option value="name">Sort by Name</option>
-                <option value="price">Sort by Price</option>
-                <option value="purity">Sort by Purity</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Results Count */}
-          <div className="mb-6 flex items-center gap-2">
-            <p className="text-gray-500 font-medium text-sm">
-              Showing <span className="font-bold text-theme-text">{sortedProducts.length}</span> products
+        <div className="container mx-auto px-4 sm:px-6 py-6 sm:py-10 max-w-6xl" ref={productsRef}>
+          {/* Section Header */}
+          <div className="mb-5">
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight" style={{ color: '#3C6CA8' }}>
+              All Products
+            </h1>
+            <p className="mt-2 text-sm sm:text-base text-charcoal-500">
+              Premium research peptides with 99%+ purity
             </p>
           </div>
 
+          {/* Pill Search */}
+          <div className="mb-3 relative">
+            <Search className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-charcoal-400" />
+            <input
+              type="text"
+              placeholder="Search products..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full h-14 pl-14 pr-5 rounded-full border border-charcoal-100 bg-white text-base text-charcoal-900 placeholder:text-charcoal-400 focus:outline-none focus:ring-2 focus:ring-brand-200 focus:border-brand-400 transition-all"
+            />
+          </div>
+
+          {/* Pill Sort */}
+          <div className="mb-6 inline-flex">
+            <div className="relative">
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as 'name' | 'price' | 'purity')}
+                aria-label="Sort products"
+                className="appearance-none h-12 pl-5 pr-12 rounded-full border border-charcoal-100 bg-white text-sm font-semibold text-charcoal-900 focus:outline-none focus:ring-2 focus:ring-brand-200 focus:border-brand-400 cursor-pointer"
+              >
+                <option value="name">{sortLabels.name}</option>
+                <option value="price">{sortLabels.price}</option>
+                <option value="purity">{sortLabels.purity}</option>
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-500" />
+            </div>
+          </div>
+
           {/* Products Grid */}
-          {sortedProducts.length === 0 ? (
-            <div className="text-center py-20">
-              <div className="bg-white rounded-xl shadow-soft p-12 max-w-md mx-auto border border-gray-100">
-                <div className="bg-gray-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <Package className="w-10 h-10 text-gray-400" />
+          {loading && menuItems.length === 0 ? (
+            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-5">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="bg-white rounded-2xl border border-charcoal-100 overflow-hidden shadow-soft animate-pulse"
+                >
+                  <div className="aspect-square bg-charcoal-100" />
+                  <div className="p-4 space-y-3">
+                    <div className="h-4 bg-charcoal-100 rounded w-3/4" />
+                    <div className="h-3 bg-charcoal-100 rounded w-1/2" />
+                    <div className="h-8 bg-charcoal-100 rounded-full w-full mt-4" />
+                  </div>
                 </div>
-                <h3 className="text-xl font-bold text-theme-text mb-2">No products found</h3>
-                <p className="text-gray-500 mb-6">
+              ))}
+            </div>
+          ) : sortedProducts.length === 0 ? (
+            <div className="text-center py-20">
+              <div className="bg-white rounded-2xl shadow-soft p-12 max-w-md mx-auto border border-charcoal-100">
+                <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 bg-cream-100">
+                  <Package className="w-10 h-10 text-brand-500" strokeWidth={1.5} />
+                </div>
+                <h3 className="text-xl font-semibold text-charcoal-900 mb-2">No products found</h3>
+                <p className="text-charcoal-500 mb-6">
                   {searchQuery
                     ? `No products match "${searchQuery}".`
                     : 'No products available.'}
@@ -122,7 +143,7 @@ const Menu: React.FC<MenuProps> = ({ menuItems, addToCart, cartItems }) => {
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery('')}
-                    className="btn-primary"
+                    className="text-brand-600 font-semibold hover:text-brand-700 hover:underline"
                   >
                     Clear Search
                   </button>
@@ -130,14 +151,14 @@ const Menu: React.FC<MenuProps> = ({ menuItems, addToCart, cartItems }) => {
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-5">
               {sortedProducts.map((product) => (
                 <MenuItemCard
                   key={product.id}
                   product={product}
-                  onAddToCart={addToCart}
                   cartQuantity={getCartQuantity(product.id)}
-                  onProductClick={setSelectedProduct}
+                  onProductClick={handleProductClick}
+                  onAddToCart={addToCart}
                   globalDiscount={globalDiscount}
                 />
               ))}

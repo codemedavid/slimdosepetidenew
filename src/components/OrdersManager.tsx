@@ -23,6 +23,7 @@ interface OrderItem {
 
 interface Order {
   id: string;
+  order_number: string | null;
   customer_name: string;
   customer_email: string;
   customer_phone: string;
@@ -95,7 +96,7 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ onBack }) => {
   };
 
   const handleConfirmOrder = async (order: Order) => {
-    if (!confirm(`Confirm order #${order.id.slice(0, 8)}? This will deduct stock from inventory.`)) {
+    if (!confirm(`Confirm order #${order.order_number || order.id.slice(0, 8)}? This will deduct stock from inventory.`)) {
       return;
     }
 
@@ -319,7 +320,8 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ onBack }) => {
         o.customer_name.toLowerCase().includes(query) ||
         o.customer_email.toLowerCase().includes(query) ||
         o.customer_phone.includes(query) ||
-        o.id.toLowerCase().includes(query)
+        o.id.toLowerCase().includes(query) ||
+        (o.order_number?.toLowerCase().includes(query) ?? false)
       );
     }
 
@@ -537,7 +539,7 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onView, getStatusColor, ge
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 md:gap-3 mb-2 flex-wrap">
             <h3 className="font-bold text-gray-900 text-sm md:text-base lg:text-lg truncate">
-              Order #{order.id.slice(0, 8).toUpperCase()}
+              Order #{order.order_number || order.id.slice(0, 8).toUpperCase()}
             </h3>
             <span className={`px-2 md:px-3 py-0.5 md:py-1 rounded-full text-[10px] md:text-xs font-semibold border flex items-center gap-1 ${getStatusColor(order.order_status)}`}>
               {getStatusIcon(order.order_status)}
@@ -728,7 +730,7 @@ const OrderDetailsView: React.FC<OrderDetailsViewProps> = ({
                 <span className="text-xs md:text-sm">Back to Orders</span>
               </button>
               <h1 className="text-sm md:text-base lg:text-xl font-bold text-navy-900 truncate">
-                Order #{order.id.slice(0, 8).toUpperCase()}
+                Order #{order.order_number || order.id.slice(0, 8).toUpperCase()}
               </h1>
             </div>
             <div className="flex items-center gap-2">

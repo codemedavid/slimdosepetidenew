@@ -7,66 +7,103 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Minimalist SlimDose Theme
-        'theme-bg': '#FFFFFF',      // White
-        'theme-text': '#1A1A1A',    // Soft Black
-        'theme-accent': '#1A1A1A',  // Black for primary actions
-        'theme-secondary': '#F0E6D2', // Beige
+        // Premium minimal SlimDose Theme — White / Cream / Blue accent
+        'theme-bg': '#FFFFFF',          // Main: White
+        'theme-sub': '#FFFCF6',         // Sub: Cream
+        'theme-text': '#1A1A1A',        // Soft Black
+        'theme-accent': '#3C6CA8',      // Blue accent
+        'theme-secondary': '#FFFCF6',   // Cream
 
-        // Mapping standard colors to the new theme for compatibility
+        // Backwards-compatible mappings — all remapped onto the premium palette
         primary: {
           50: '#FFFFFF',
-          100: '#F9F9F9',
-          200: '#F0E6D2', // Beige
-          300: '#E0D0B0',
-          400: '#C0B090',
-          500: '#1A1A1A', // Dark
-          600: '#151515',
-          700: '#101010',
-          800: '#0A0A0A',
-          900: '#000000',
+          100: '#FFFCF6',
+          200: '#FBF6EA',
+          300: '#E2EBF5',
+          400: '#94B3D6',
+          500: '#3C6CA8',
+          600: '#315A8E',
+          700: '#264874',
+          800: '#1C375A',
+          900: '#132843',
         },
-        // Deprecating gold but mapping to secondary/accent to prevent breaks
+        // Old "gold" tokens remapped to cream/blue so legacy classes don't break the look
         gold: {
-          50: '#FBF8F1',
-          100: '#F7F1E3',
-          200: '#EBDCB9',
-          300: '#DFC790',
-          400: '#D4AF37', // Classic Metallic Gold
-          500: '#B89628',
-          600: '#A08020',
-          700: '#806018',
-          800: '#604812',
-          900: '#40300C',
+          50: '#FFFDFA',
+          100: '#FFFCF6',
+          200: '#FBF6EA',
+          300: '#E2EBF5',
+          400: '#94B3D6',
+          500: '#3C6CA8',
+          600: '#315A8E',
+          700: '#264874',
+          800: '#1C375A',
+          900: '#132843',
         },
         accent: {
-          light: '#F0E6D2', // Beige
-          DEFAULT: '#00008B', // Dark Blue
-          dark: '#000066',
-          white: '#ffffff',
+          light: '#FFFCF6',
+          DEFAULT: '#3C6CA8',
+          dark: '#264874',
+          white: '#FFFFFF',
           black: '#1A1A1A',
-          navy: '#00008B', // Dark Blue
+          navy: '#3C6CA8',
         },
+        // Old "navy-*" tokens remapped to the blue accent scale
         navy: {
-          50: '#e6e6f5',
-          100: '#cccceb',
-          200: '#9999d6',
-          300: '#6666c2',
-          400: '#3333ad',
-          500: '#0000a0',
-          600: '#000099',
-          700: '#00008B', // Dark Blue (main)
-          800: '#000070',
-          900: '#000055', // Darkest
+          50: '#F2F6FB',
+          100: '#E2EBF5',
+          200: '#C2D4EA',
+          300: '#94B3D6',
+          400: '#6691C2',
+          500: '#3C6CA8',
+          600: '#315A8E',
+          700: '#264874',
+          800: '#1C375A',
+          900: '#132843',
+        },
+        cream: {
+          DEFAULT: '#FFFCF6',
+          50: '#FFFDFA',
+          100: '#FFFCF6',
+          200: '#FBF6EA',
+        },
+        brand: {
+          DEFAULT: '#3C6CA8',
+          50: '#F2F6FB',
+          100: '#E2EBF5',
+          200: '#C2D4EA',
+          300: '#94B3D6',
+          400: '#6691C2',
+          500: '#3C6CA8',
+          600: '#315A8E',
+          700: '#264874',
+          800: '#1C375A',
+          900: '#132843',
+        },
+        charcoal: {
+          DEFAULT: '#1A1A1A',
+          50: '#F7F7F7',
+          100: '#EFEFEF',
+          200: '#DCDCDC',
+          300: '#BFBFBF',
+          400: '#8A8A8A',
+          500: '#5C5C5C',
+          600: '#3D3D3D',
+          700: '#2A2A2A',
+          800: '#1F1F1F',
+          900: '#1A1A1A',
         },
       },
       fontFamily: {
         inter: ['Inter', 'sans-serif'],
+        heading: ['Playfair Display', 'serif'],
+        cute: ['Inter', 'sans-serif'],
       },
       boxShadow: {
-        'soft': '0 2px 10px rgba(0, 0, 0, 0.03)',
-        'medium': '0 4px 15px rgba(0, 0, 0, 0.05)',
-        'hover': '0 8px 25px rgba(0, 0, 0, 0.08)',
+        'soft': '0 2px 12px rgba(20, 35, 60, 0.05), 0 1px 4px rgba(20, 35, 60, 0.03)',
+        'medium': '0 4px 15px rgba(20, 35, 60, 0.06)',
+        'hover': '0 8px 25px rgba(20, 35, 60, 0.08)',
+        'luxury': '0 12px 32px rgba(60, 108, 168, 0.10), 0 4px 12px rgba(60, 108, 168, 0.05)',
       },
       animation: {
         'fadeIn': 'fadeIn 0.5s ease-out',

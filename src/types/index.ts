@@ -26,12 +26,45 @@ export interface Product {
   // Images and metadata
   image_url: string | null;
   safety_sheet_url: string | null;
+  coa_url: string | null;
+  slug: string;
 
   created_at: string;
   updated_at: string;
 
   // Relations
   variations?: ProductVariation[];
+  bundle_tiers?: ProductBundleTier[];
+}
+
+export interface Protocol {
+  id: string;
+  name: string;
+  category: string;
+  dosage: string;
+  frequency: string;
+  duration: string;
+  notes: string[] | null;
+  storage: string;
+  active: boolean;
+  sort_order: number;
+  product_id: string | null;
+  image_url: string | null;
+  file_url: string | null;
+  content_type: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProductBundleTier {
+  id: string;
+  product_id: string;
+  min_quantity: number;
+  discount_percentage: number;
+  active: boolean;
+  most_popular: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ProductVariation {
@@ -40,6 +73,7 @@ export interface ProductVariation {
   name: string;
   quantity_mg: number;
   price: number;
+  cost_price: number;
   discount_price: number | null;
   discount_active: boolean;
   stock_quantity: number;

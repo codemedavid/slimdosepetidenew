@@ -1,6 +1,9 @@
-import React from 'react';
-import { Trash2, ShoppingBag, ArrowLeft, CreditCard, Plus, Minus, Sparkles, Heart } from 'lucide-react';
+import React, { useEffect, useMemo } from 'react';
+import { Trash2, ShoppingBag, ArrowLeft, CreditCard, Plus, Minus, Sparkles, Heart, Tag, Info, X } from 'lucide-react';
 import type { CartItem } from '../types';
+import { useBundleTiers } from '../hooks/useBundleTiers';
+import { useGlobalDiscount } from '../hooks/useGlobalDiscount';
+import { computeCartPricing } from '../utils/pricing';
 
 interface CartProps {
   cartItems: CartItem[];
@@ -8,6 +11,9 @@ interface CartProps {
   removeFromCart: (index: number) => void;
   clearCart: () => void;
   getTotalPrice: () => number;
+  refreshCartPrices: () => Promise<boolean>;
+  pricesUpdatedAt: number | null;
+  dismissPriceUpdateNotice: () => void;
   onContinueShopping: () => void;
   onCheckout: () => void;
 }
@@ -17,10 +23,30 @@ const Cart: React.FC<CartProps> = ({
   updateQuantity,
   removeFromCart,
   clearCart,
-  getTotalPrice,
+  refreshCartPrices,
+  pricesUpdatedAt,
+  dismissPriceUpdateNotice,
   onContinueShopping,
   onCheckout,
 }) => {
+  const productIds = useMemo(
+    () => cartItems.map((i) => i.product.id),
+    [cartItems]
+  );
+  const { tiersByProduct } = useBundleTiers(productIds);
+  const { globalDiscount } = useGlobalDiscount();
+
+  // Refresh prices when cart drawer opens
+  useEffect(() => {
+    refreshCartPrices();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const pricing = useMemo(
+    () => computeCartPricing(cartItems, tiersByProduct, globalDiscount),
+    [cartItems, tiersByProduct, globalDiscount]
+  );
+
   if (cartItems.length === 0) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center px-4 py-12">
@@ -49,13 +75,28 @@ const Cart: React.FC<CartProps> = ({
     );
   }
 
-  const totalPrice = getTotalPrice();
-  // Shipping fee will be discussed via chat
-  const finalTotal = totalPrice;
+  const finalTotal = pricing.subtotal;
 
   return (
     <div className="min-h-screen bg-white py-6 md:py-8">
       <div className="container mx-auto px-3 md:px-4">
+        {/* Price update notice */}
+        {pricesUpdatedAt && (
+          <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 md:p-4 text-amber-800">
+            <Info className="w-5 h-5 mt-0.5 flex-shrink-0" />
+            <div className="flex-1 text-sm md:text-base font-medium">
+              Prices have been updated to the latest from our store.
+            </div>
+            <button
+              onClick={dismissPriceUpdateNotice}
+              className="p-1 hover:bg-amber-100 rounded"
+              aria-label="Dismiss"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* Header */}
         <div className="mb-6 md:mb-8">
           <button
@@ -83,13 +124,14 @@ const Cart: React.FC<CartProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
           {/* Cart Items */}
           <div className="lg:col-span-2 space-y-3 md:space-y-4">
-            {cartItems.map((item, index) => (
+            {cartItems.map((item, index) => {
+              const line = pricing.lines[index];
+              return (
               <div
                 key={index}
                 className="bg-white backdrop-blur-sm rounded-lg shadow-lg hover:shadow-xl p-4 md:p-6 transition-all animate-fadeIn border border-gray-200 hover:border-navy-700"
               >
                 <div className="flex gap-4 md:gap-6">
-                  {/* Product Image */}
                   <div className="w-20 h-20 md:w-24 md:h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex-shrink-0 flex items-center justify-center overflow-hidden shadow-md border border-gray-300">
                     {item.product.image_url ? (
                       <img
@@ -104,7 +146,6 @@ const Cart: React.FC<CartProps> = ({
                     )}
                   </div>
 
-                  {/* Product Details */}
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-start mb-2">
                       <div className="flex-1 min-w-0">
@@ -123,6 +164,12 @@ const Cart: React.FC<CartProps> = ({
                             </span>
                           </div>
                         ) : null}
+                        {line?.appliedTier && (
+                          <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] md:text-xs font-semibold bg-green-100 text-green-700">
+                            <Tag className="w-3 h-3" />
+                            Bundle: {Number(line.appliedTier.discount_percentage)}% OFF
+                          </div>
+                        )}
                       </div>
                       <button
                         onClick={() => removeFromCart(index)}
@@ -133,7 +180,6 @@ const Cart: React.FC<CartProps> = ({
                       </button>
                     </div>
 
-                    {/* Quantity and Price */}
                     <div className="flex justify-between items-center mt-3 md:mt-4">
                       <div className="flex items-center border-2 border-gray-200 rounded-xl bg-white shadow-sm">
                         <button
@@ -171,28 +217,31 @@ const Cart: React.FC<CartProps> = ({
                         </button>
                       </div>
 
-                      {(() => {
-                        const itemPrice = typeof item.price === 'number'
-                          ? item.price
-                          : (item.variation
-                              ? (item.variation.discount_active && item.variation.discount_price ? item.variation.discount_price : item.variation.price)
-                              : (item.product.discount_active && item.product.discount_price ? item.product.discount_price : item.product.base_price)) ?? 0;
-                        return (
-                          <div className="text-right">
-                            <div className="text-xl md:text-2xl font-bold text-black">
-                              ₱{(itemPrice * item.quantity).toLocaleString('en-PH', { minimumFractionDigits: 0 })}
+                      <div className="text-right">
+                        <div className="text-xl md:text-2xl font-bold text-black">
+                          ₱{(line ? line.lineSubtotal : item.price * item.quantity).toLocaleString('en-PH', { minimumFractionDigits: 0 })}
+                        </div>
+                        {line?.bundlePercent ? (
+                          <>
+                            <div className="text-[10px] md:text-xs text-gray-400 line-through">
+                              ₱{(line.unitBasePrice * item.quantity).toLocaleString('en-PH', { minimumFractionDigits: 0 })}
                             </div>
-                            <div className="text-[10px] md:text-xs text-gray-500">
-                              ₱{itemPrice.toLocaleString('en-PH', { minimumFractionDigits: 0 })} each
+                            <div className="text-[10px] md:text-xs text-green-600 font-medium">
+                              Save ₱{line.lineSavings.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
                             </div>
+                          </>
+                        ) : (
+                          <div className="text-[10px] md:text-xs text-gray-500">
+                            ₱{(line ? line.unitFinalPrice : item.price).toLocaleString('en-PH', { minimumFractionDigits: 0 })} each
                           </div>
-                        );
-                      })()}
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Order Summary */}
@@ -206,8 +255,21 @@ const Cart: React.FC<CartProps> = ({
               <div className="space-y-3 mb-6">
                 <div className="flex justify-between text-gray-700 text-sm md:text-base">
                   <span>Subtotal ({cartItems.reduce((sum, item) => sum + item.quantity, 0)} items)</span>
-                  <span className="font-semibold">₱{totalPrice.toLocaleString('en-PH', { minimumFractionDigits: 0 })}</span>
+                  <span className="font-semibold">₱{pricing.subtotalBeforeBundle.toLocaleString('en-PH', { minimumFractionDigits: 0 })}</span>
                 </div>
+
+                {pricing.hasBundleDiscount && (
+                  <div className="flex justify-between items-center bg-green-50 -mx-5 px-5 py-2 border-y border-green-100">
+                    <span className="flex items-center gap-1.5 text-green-700 font-medium text-sm">
+                      <Tag className="w-4 h-4" />
+                      Bundle discount
+                    </span>
+                    <span className="font-bold text-green-700 text-sm">
+                      -₱{pricing.bundleSavings.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
+                    </span>
+                  </div>
+                )}
+
                 <div className="flex flex-col gap-1 text-gray-700 text-xs md:text-sm">
                   <div className="flex justify-between">
                     <span>Shipping</span>
@@ -232,6 +294,11 @@ const Cart: React.FC<CartProps> = ({
                       ₱{finalTotal.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
                     </span>
                   </div>
+                  {pricing.hasBundleDiscount && (
+                    <p className="text-xs text-green-700 mt-1 text-right font-medium">
+                      Bundle discount applied — promo codes can't be combined.
+                    </p>
+                  )}
                   <p className="text-xs text-gray-500 mt-1 text-right">+ Shipping fee (calculated on checkout)</p>
                 </div>
               </div>
@@ -252,7 +319,6 @@ const Cart: React.FC<CartProps> = ({
                 Continue Shopping
               </button>
 
-              {/* Trust Badges */}
               <div className="mt-6 pt-6 border-t-2 border-dashed border-gray-200 space-y-2">
                 <p className="flex items-center gap-2 text-xs md:text-sm text-gray-600">
                   <span className="text-green-500 text-lg">✓</span>

@@ -18,6 +18,7 @@ const VariationManager: React.FC<VariationManagerProps> = ({ product, onClose })
     name: '',
     quantity_mg: 5.0,
     price: product.base_price,
+    cost_price: 0,
     discount_price: null as number | null,
     discount_active: false,
     stock_quantity: 0
@@ -27,6 +28,7 @@ const VariationManager: React.FC<VariationManagerProps> = ({ product, onClose })
     name: '',
     quantity_mg: 5.0,
     price: product.base_price,
+    cost_price: 0,
     discount_price: null as number | null,
     discount_active: false,
     stock_quantity: 0
@@ -45,6 +47,7 @@ const VariationManager: React.FC<VariationManagerProps> = ({ product, onClose })
         name: newVariation.name,
         quantity_mg: newVariation.quantity_mg,
         price: newVariation.price,
+        cost_price: newVariation.cost_price,
         discount_price: newVariation.discount_price,
         discount_active: newVariation.discount_active,
         stock_quantity: newVariation.stock_quantity
@@ -55,6 +58,7 @@ const VariationManager: React.FC<VariationManagerProps> = ({ product, onClose })
           name: '',
           quantity_mg: 5.0,
           price: product.base_price,
+          cost_price: 0,
           discount_price: null,
           discount_active: false,
           stock_quantity: 0
@@ -77,6 +81,7 @@ const VariationManager: React.FC<VariationManagerProps> = ({ product, onClose })
       name: variation.name,
       quantity_mg: variation.quantity_mg,
       price: variation.price,
+      cost_price: variation.cost_price ?? 0,
       discount_price: variation.discount_price,
       discount_active: variation.discount_active,
       stock_quantity: variation.stock_quantity
@@ -203,7 +208,7 @@ const VariationManager: React.FC<VariationManagerProps> = ({ product, onClose })
 
                           <div>
                             <label className="block text-sm font-semibold text-gray-700 mb-2">
-                              Price (₱) *
+                              Selling Price (₱) *
                             </label>
                             <input
                               type="number"
@@ -212,6 +217,25 @@ const VariationManager: React.FC<VariationManagerProps> = ({ product, onClose })
                               onChange={(e) => setEditingVariation({ ...editingVariation, price: parseFloat(e.target.value) || 0 })}
                               className="input-field"
                             />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">
+                              Raw Cost (₱)
+                            </label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={editingVariation.cost_price}
+                              onChange={(e) => setEditingVariation({ ...editingVariation, cost_price: parseFloat(e.target.value) || 0 })}
+                              className="input-field"
+                              placeholder="Wholesale / supplier cost"
+                            />
+                            {editingVariation.price > 0 && editingVariation.cost_price > 0 && (
+                              <p className="text-xs text-emerald-600 mt-1 font-medium">
+                                Profit: ₱{(editingVariation.price - editingVariation.cost_price).toLocaleString()} ({(((editingVariation.price - editingVariation.cost_price) / editingVariation.price) * 100).toFixed(1)}%)
+                              </p>
+                            )}
                           </div>
 
                           <div>
@@ -278,7 +302,7 @@ const VariationManager: React.FC<VariationManagerProps> = ({ product, onClose })
                     ) : (
                       // View Mode
                       <div className="bg-gradient-to-r from-teal-50 to-emerald-50 border-2 border-teal-200 rounded-xl p-4 flex items-center justify-between">
-                        <div className="flex-1 grid grid-cols-4 gap-4">
+                        <div className="flex-1 grid grid-cols-2 md:grid-cols-5 gap-4">
                           <div>
                             <div className="text-xs text-gray-500 mb-1">Size Name</div>
                             <div className="font-bold text-gray-900">{variation.name}</div>
@@ -288,8 +312,19 @@ const VariationManager: React.FC<VariationManagerProps> = ({ product, onClose })
                             <div className="font-semibold text-gray-700">{variation.quantity_mg}mg</div>
                           </div>
                           <div>
-                            <div className="text-xs text-gray-500 mb-1">Price</div>
+                            <div className="text-xs text-gray-500 mb-1">Selling Price</div>
                             <div className="font-semibold text-teal-600">₱{variation.price.toLocaleString()}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1">Cost / Profit</div>
+                            <div className="font-semibold text-gray-700">
+                              ₱{(variation.cost_price ?? 0).toLocaleString()}
+                              {variation.cost_price > 0 && variation.price > 0 && (
+                                <span className="text-xs text-emerald-600 ml-1">
+                                  ({(((variation.price - variation.cost_price) / variation.price) * 100).toFixed(0)}%)
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <div>
                             <div className="text-xs text-gray-500 mb-1">Stock</div>
@@ -368,7 +403,7 @@ const VariationManager: React.FC<VariationManagerProps> = ({ product, onClose })
 
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Price (₱) *
+                      Selling Price (₱) *
                     </label>
                     <input
                       type="number"
@@ -377,6 +412,25 @@ const VariationManager: React.FC<VariationManagerProps> = ({ product, onClose })
                       onChange={(e) => setNewVariation({ ...newVariation, price: parseFloat(e.target.value) || 0 })}
                       className="input-field"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Raw Cost (₱)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={newVariation.cost_price}
+                      onChange={(e) => setNewVariation({ ...newVariation, cost_price: parseFloat(e.target.value) || 0 })}
+                      className="input-field"
+                      placeholder="Wholesale / supplier cost"
+                    />
+                    {newVariation.price > 0 && newVariation.cost_price > 0 && (
+                      <p className="text-xs text-emerald-600 mt-1 font-medium">
+                        Profit: ₱{(newVariation.price - newVariation.cost_price).toLocaleString()} ({(((newVariation.price - newVariation.cost_price) / newVariation.price) * 100).toFixed(1)}%)
+                      </p>
+                    )}
                   </div>
 
                   <div>

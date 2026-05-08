@@ -5,21 +5,21 @@
 @tailwind utilities;
 
 :root {
-  /* Minimalist SlimDose Theme */
+  /* Premium minimal SlimDose Theme — White / Cream / Blue accent */
   --theme-bg: #FFFFFF;
+  --theme-sub: #FFFCF6;
   --theme-text: #1A1A1A;
-  --theme-accent: #1A1A1A;
-  --theme-secondary: #F0E6D2;
+  --theme-accent: #3C6CA8;
+  --theme-secondary: #FFFCF6;
 
   --primary-black: #1A1A1A;
   --primary-white: #ffffff;
 
-  --gray-50: #FFFFFF;
-  --gray-100: #F9F9F9;
-  --gray-200: #F0E6D2;
-  /* Beige tint */
-  --gray-300: #E5E5E5;
-  --gray-500: #888888;
+  --gray-50: #FFFDFA;
+  --gray-100: #FFFCF6;
+  --gray-200: #EFEFEF;
+  --gray-300: #DCDCDC;
+  --gray-500: #5C5C5C;
   --gray-900: #1A1A1A;
 }
 
@@ -49,22 +49,22 @@ h6 {
   letter-spacing: -0.02em;
 }
 
-/* Minimalist Button Styles */
+/* Premium Minimal Button Styles */
 .btn-primary {
-  @apply bg-navy-900 text-white px-8 py-3 rounded-lg font-medium hover:bg-navy-800 transition-colors shadow-lg hover:shadow-xl transform hover:-translate-y-0.5;
+  @apply bg-brand-500 text-white px-8 py-3 rounded-full font-medium hover:bg-brand-600 transition-all shadow-soft hover:shadow-luxury;
 }
 
 .btn-secondary {
-  @apply bg-transparent text-theme-text border border-theme-text px-6 py-3 rounded-md font-medium transition-all duration-200 hover:bg-theme-text hover:text-white active:scale-95;
+  @apply bg-transparent text-theme-text border border-charcoal-200 px-6 py-3 rounded-full font-medium transition-all duration-200 hover:border-brand-500 hover:text-brand-600 active:scale-95;
 }
 
 .btn-outline {
-  @apply bg-transparent text-theme-text border border-gray-300 px-4 py-2 rounded-md font-medium transition-all duration-200 hover:border-theme-accent hover:text-theme-accent;
+  @apply bg-transparent text-theme-text border border-charcoal-200 px-4 py-2 rounded-full font-medium transition-all duration-200 hover:border-brand-500 hover:text-brand-600;
 }
 
 .btn-gold {
-  /* Backward compatibility mapping to accent */
-  @apply bg-theme-secondary text-white px-6 py-3 rounded-md font-medium transition-all duration-200 hover:bg-opacity-90 active:scale-95 shadow-sm;
+  /* Backward compatibility — remapped to brand accent */
+  @apply bg-brand-500 text-white px-6 py-3 rounded-full font-medium transition-all duration-200 hover:bg-brand-600 active:scale-95 shadow-soft;
 }
 
 /* Minimalist Card Styles */
@@ -82,20 +82,20 @@ h6 {
 }
 
 .badge-gold {
-  @apply bg-theme-bg text-theme-secondary border border-theme-secondary;
+  @apply bg-cream-100 text-brand-700 border border-brand-100;
 }
 
 .badge-accent {
-  @apply bg-theme-accent bg-opacity-10 text-theme-accent border border-theme-accent border-opacity-20;
+  @apply bg-brand-50 text-brand-700 border border-brand-200;
 }
 
 .badge-black {
-  @apply bg-theme-text text-white;
+  @apply bg-charcoal-900 text-white;
 }
 
 /* Input Styles */
 .input-field {
-  @apply w-full px-4 py-3 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-theme-accent focus:border-theme-accent transition-all bg-white hover:border-gray-300;
+  @apply w-full px-4 py-3 border border-charcoal-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-200 focus:border-brand-400 transition-all bg-white hover:border-charcoal-200;
 }
 
 .input-field:disabled {

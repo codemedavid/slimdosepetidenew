@@ -25,7 +25,7 @@ const Footer: React.FC = () => {
               />
             </div>
             <div className="text-left">
-              <div className="font-bold text-theme-text text-lg tracking-tight">
+              <div className="font-bold text-lg tracking-tight" style={{ color: '#3C6CA8' }}>
                 SlimDose Peptides
               </div>
               <div className="text-xs text-gray-500">Premium Peptide Solutions</div>

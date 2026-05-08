@@ -15,14 +15,39 @@ import PeptideCalculator from './components/PeptideCalculator';
 import OrderTracking from './components/OrderTracking';
 import SmartGuide from './components/SmartGuide';
 import ArticleDetail from './components/ArticleDetail';
+import ProductPage from './components/ProductPage';
 import { useMenu } from './hooks/useMenu';
 // import { useCOAPageSetting } from './hooks/useCOAPageSetting';
 
 function MainApp() {
   const cart = useCart();
-  const { menuItems, refreshProducts } = useMenu();
+  const { menuItems, loading: menuLoading, refreshProducts } = useMenu();
   const [currentView, setCurrentView] = React.useState<'menu' | 'cart' | 'checkout'>('menu');
   const [selectedCategory, setSelectedCategory] = React.useState<string>('all');
+  const [paymongoNotice, setPaymongoNotice] = React.useState<
+    { kind: 'success' | 'cancel'; orderId: string | null } | null
+  >(null);
+
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get('paymongo');
+    if (result === 'success' || result === 'cancel') {
+      const orderId = params.get('order_id');
+      if (result === 'success') {
+        cart.clearCart();
+        setPaymongoNotice({ kind: 'success', orderId });
+        setCurrentView('menu');
+      } else {
+        setPaymongoNotice({ kind: 'cancel', orderId });
+        setCurrentView('checkout');
+      }
+      params.delete('paymongo');
+      params.delete('order_id');
+      const next = window.location.pathname + (params.toString() ? `?${params}` : '');
+      window.history.replaceState({}, '', next);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleViewChange = (view: 'menu' | 'cart' | 'checkout') => {
     setCurrentView(view);
@@ -51,10 +76,32 @@ function MainApp() {
         <SubNav selectedCategory={selectedCategory} onCategoryClick={handleCategoryClick} />
       )}
 
+      {paymongoNotice && (
+        <div className={`px-4 py-3 text-sm md:text-base font-medium flex items-center justify-between gap-3 ${
+          paymongoNotice.kind === 'success'
+            ? 'bg-green-50 text-green-800 border-b border-green-200'
+            : 'bg-amber-50 text-amber-800 border-b border-amber-200'
+        }`}>
+          <span>
+            {paymongoNotice.kind === 'success'
+              ? `✅ Payment received! Your order${paymongoNotice.orderId ? ` (${paymongoNotice.orderId.slice(0, 8)})` : ''} is confirmed. We'll start processing it shortly.`
+              : `⚠️ Payment was cancelled${paymongoNotice.orderId ? ` for order ${paymongoNotice.orderId.slice(0, 8)}` : ''}. You can try again or pick a different payment method.`}
+          </span>
+          <button
+            onClick={() => setPaymongoNotice(null)}
+            className="px-2 py-1 rounded hover:bg-black/5"
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <main className="flex-grow">
         {currentView === 'menu' && (
           <Menu
             menuItems={filteredProducts}
+            loading={menuLoading}
             addToCart={cart.addToCart}
             cartItems={cart.cartItems}
             updateQuantity={cart.updateQuantity}
@@ -68,6 +115,9 @@ function MainApp() {
             removeFromCart={cart.removeFromCart}
             clearCart={cart.clearCart}
             getTotalPrice={cart.getTotalPrice}
+            refreshCartPrices={cart.refreshCartPrices}
+            pricesUpdatedAt={cart.pricesUpdatedAt}
+            dismissPriceUpdateNotice={cart.dismissPriceUpdateNotice}
             onContinueShopping={() => handleViewChange('menu')}
             onCheckout={() => handleViewChange('checkout')}
           />
@@ -77,6 +127,9 @@ function MainApp() {
           <Checkout
             cartItems={cart.cartItems}
             totalPrice={cart.getTotalPrice()}
+            refreshCartPrices={cart.refreshCartPrices}
+            pricesUpdatedAt={cart.pricesUpdatedAt}
+            dismissPriceUpdateNotice={cart.dismissPriceUpdateNotice}
             onBack={() => handleViewChange('cart')}
           />
         )}
@@ -110,6 +163,8 @@ function App() {
         <Route path="/peptalk" element={<SmartGuide />} />
         <Route path="/peptalk/:id" element={<ArticleDetail />} />
         <Route path="/admin" element={<AdminDashboard />} />
+        {/* Catch-all product slug — must stay LAST so it doesn't shadow named routes */}
+        <Route path="/:slug" element={<ProductPage />} />
       </Routes>
     </Router>
   );

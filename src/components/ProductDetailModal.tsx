@@ -1,296 +1,612 @@
-import React, { useState } from 'react';
-import { X, Package, Beaker, ShoppingCart, Plus, Minus, Sparkles } from 'lucide-react';
-import type { Product, ProductVariation, GlobalDiscount } from '../types';
-import { resolveProductPricing } from '../utils/pricing';
+import React, { useEffect, useState } from 'react';
+import {
+  X,
+  Package,
+  ShoppingCart,
+  Plus,
+  Minus,
+  Truck,
+  ShieldCheck,
+  Zap,
+  FileText,
+} from 'lucide-react';
+import type { Product, ProductVariation, GlobalDiscount, ProductBundleTier, Protocol } from '../types';
+import { resolveProductPricing, pickBundleTier } from '../utils/pricing';
 
 interface ProductDetailModalProps {
   product: Product;
   onClose: () => void;
   onAddToCart: (product: Product, variation: ProductVariation | undefined, quantity: number, priceOverride?: number) => void;
   globalDiscount?: GlobalDiscount | null;
+  bundleTiers?: ProductBundleTier[];
+  protocols?: Protocol[];
+  asPage?: boolean;
 }
 
-const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClose, onAddToCart, globalDiscount }) => {
-  // Select first available variation, or first variation if all are out of stock
+const formatShippingWindow = () => {
+  const start = new Date();
+  start.setDate(start.getDate() + 5);
+  const end = new Date();
+  end.setDate(end.getDate() + 11);
+  const fmt = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  return `${fmt.format(start)} - ${fmt.format(end)}`;
+};
+
+const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClose, onAddToCart, globalDiscount, bundleTiers, protocols, asPage = false }) => {
   const getFirstAvailableVariation = () => {
     if (!product.variations || product.variations.length === 0) return undefined;
     const available = product.variations.find(v => v.stock_quantity > 0);
     return available || product.variations[0];
   };
 
+  const [imageError, setImageError] = useState(false);
   const [selectedVariation, setSelectedVariation] = useState<ProductVariation | undefined>(
     getFirstAvailableVariation()
   );
   const [quantity, setQuantity] = useState(1);
 
-  const pricing = resolveProductPricing(product, selectedVariation, globalDiscount);
-  const currentPrice = pricing.price;
-  const hasDiscount = pricing.hasDiscount;
-  const originalPrice = pricing.originalPrice;
-  const showPurity = Boolean(product.purity_percentage);
+  // Lock body scroll only when used as overlay
+  useEffect(() => {
+    if (asPage) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [asPage]);
 
-  // Check if product has any available stock
+  const pricing = resolveProductPricing(product, selectedVariation, globalDiscount);
+  const unitPrice = pricing.price;
+  const baseOriginal = pricing.originalPrice;
+  const hasDiscount = pricing.hasDiscount;
+  const discountPercent = hasDiscount
+    ? Math.round((1 - unitPrice / baseOriginal) * 100)
+    : 0;
+
+  const totalPrice = unitPrice * quantity;
+  const totalOriginal = baseOriginal * quantity;
+
   const hasAnyStock = product.variations && product.variations.length > 0
     ? product.variations.some(v => v.stock_quantity > 0)
     : product.stock_quantity > 0;
+
+  const isOutOfStock =
+    !product.available ||
+    !hasAnyStock ||
+    (selectedVariation ? selectedVariation.stock_quantity === 0 : product.stock_quantity === 0);
+
+  const tagPool = [product.cas_number, product.sequence, product.molecular_weight]
+    .filter((v): v is string => Boolean(v && v.trim()));
+  const tags = tagPool.slice(0, 2);
 
   const incrementQuantity = () => setQuantity(prev => prev + 1);
   const decrementQuantity = () => setQuantity(prev => prev > 1 ? prev - 1 : 1);
 
   const handleAddToCart = () => {
-    const priceToUse = pricing.hasGlobalDiscount ? currentPrice : undefined;
+    const priceToUse = pricing.hasGlobalDiscount ? unitPrice : undefined;
     onAddToCart(product, selectedVariation, quantity, priceToUse);
-    onClose();
+    if (!asPage) onClose();
   };
 
+  const sortedTiers = (bundleTiers ?? [])
+    .filter((t) => t.active)
+    .slice()
+    .sort((a, b) => a.min_quantity - b.min_quantity);
+  const previewTier = pickBundleTier(sortedTiers, quantity);
+  const bundleUnitPrice = previewTier
+    ? unitPrice * (1 - Number(previewTier.discount_percentage) / 100)
+    : unitPrice;
+  const bundleTotal = bundleUnitPrice * quantity;
+
+  const coaUrl = product.coa_url || product.safety_sheet_url || null;
+
+  const formatPrice = (n: number) =>
+    `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 0 })}`;
+
+  const variations = product.variations ?? [];
+  const shippingWindow = formatShippingWindow();
+
+  const wrapperClass = asPage
+    ? 'w-full flex justify-center px-3 sm:px-4 py-6 sm:py-10'
+    : 'fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-charcoal-900/40 backdrop-blur-sm animate-fadeIn';
+  const cardClass = asPage
+    ? 'relative w-full sm:max-w-2xl bg-white shadow-luxury rounded-2xl sm:rounded-3xl overflow-hidden flex flex-col'
+    : 'relative w-full sm:max-w-2xl bg-white shadow-luxury rounded-t-3xl sm:rounded-3xl overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[90vh] animate-slideIn';
+
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-4xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden my-2 sm:my-8">
-        {/* Header */}
-        <div className="bg-navy-900 text-white p-3 sm:p-4 md:p-6 relative border-b-2 border-navy-900/30">
+    <div
+      className={wrapperClass}
+      onClick={asPage ? undefined : onClose}
+    >
+      <div
+        className={cardClass}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {!asPage && (
+          <div className="flex justify-center pt-2 sm:pt-3 pb-1 flex-shrink-0">
+            <span className="block w-10 h-1.5 rounded-full bg-charcoal-200" />
+          </div>
+        )}
+
+        {!asPage && (
           <button
             onClick={onClose}
-            className="absolute top-2 right-2 sm:top-3 sm:right-3 md:top-4 md:right-4 p-1.5 sm:p-2 hover:bg-white/10 rounded-lg transition-colors text-white hover:text-gold-400"
+            aria-label="Close"
+            className="absolute top-3 right-3 sm:top-4 sm:right-4 z-10 p-1.5 rounded-full text-charcoal-400 hover:text-brand-600 hover:bg-cream-100 transition-colors"
           >
-            <X className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
+            <X className="w-5 h-5" />
           </button>
-          <div className="pr-10 sm:pr-12">
-            <h2 className="text-base sm:text-xl md:text-2xl lg:text-3xl font-bold mb-1.5 sm:mb-2 bg-gradient-to-r from-white to-gray-200 bg-clip-text text-transparent">{product.name}</h2>
-            <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3 flex-wrap">
-              {showPurity && (
-                <span className="inline-flex items-center px-1.5 py-0.5 sm:px-2 sm:py-1 md:px-3 md:py-1 rounded-full text-[10px] sm:text-xs md:text-sm font-semibold bg-gold-500/20 backdrop-blur-sm border border-navy-900/40 text-gold-300">
-                  <Sparkles className="w-2.5 h-2.5 sm:w-3 sm:h-3 md:w-4 md:h-4 mr-0.5 sm:mr-1" />
-                  {product.purity_percentage}% Pure
-                </span>
-              )}
-              {product.featured && (
-                <span className="inline-flex items-center px-1.5 py-0.5 sm:px-2 sm:py-1 md:px-3 md:py-1 rounded-full text-[10px] sm:text-xs md:text-sm font-semibold bg-gold-500/20 backdrop-blur-sm border border-navy-900/40 text-gold-300">
-                  ⭐ Featured
-                </span>
-              )}
-              {hasDiscount && (
-                <span className="inline-flex items-center px-1.5 py-0.5 sm:px-2 sm:py-1 md:px-3 md:py-1 rounded-full text-[10px] sm:text-xs md:text-sm font-semibold bg-gold-500/20 backdrop-blur-sm border border-navy-900/40 text-gold-300">
-                  🎉 Sale
-                </span>
-              )}
-            </div>
+        )}
+
+        {/* Scrollable content */}
+        <div className={`px-4 sm:px-5 pt-2 pb-4 flex-1 ${asPage ? '' : 'overflow-y-auto'}`}>
+          {/* Hero image card */}
+          <div className="rounded-2xl bg-cream-100 border border-charcoal-100 p-6 sm:p-8 flex items-center justify-center aspect-[4/3] sm:aspect-[16/10]">
+            {product.image_url && !imageError ? (
+              <img
+                src={product.image_url}
+                alt={product.name}
+                className="max-h-full max-w-full object-contain"
+                onError={() => setImageError(true)}
+              />
+            ) : (
+              <Package className="w-16 h-16 text-brand-300" strokeWidth={1.25} />
+            )}
           </div>
-        </div>
 
-        {/* Content */}
-        <div className="p-3 sm:p-4 md:p-6 overflow-y-auto max-h-[calc(95vh-180px)] sm:max-h-[calc(90vh-280px)]">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-6">
-            {/* Left Column */}
-            <div className="space-y-3 sm:space-y-4 md:space-y-6">
-              {/* Product Image */}
-              {product.image_url && (
-                <div className="relative h-40 sm:h-48 md:h-56 lg:h-64 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg sm:rounded-xl overflow-hidden border-2 border-navy-700/30 shadow-lg">
-                  <img
-                    src={product.image_url}
-                    alt={product.name}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              )}
-
-              {/* Description */}
-              <div>
-                <h3 className="text-sm sm:text-base md:text-lg font-bold text-gray-900 mb-1.5 sm:mb-2 flex items-center gap-1.5 sm:gap-2">
-                  <Beaker className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-gold-600" />
-                  Product Description
-                </h3>
-                <p className="text-xs sm:text-sm md:text-base text-gray-700 leading-relaxed">{product.description}</p>
-              </div>
-
-              {/* Complete Set Inclusions */}
-              {product.inclusions && product.inclusions.length > 0 && (
-                <div className="bg-gradient-to-r from-gray-50 to-white rounded-lg sm:rounded-xl p-3 sm:p-4 border-2 border-navy-700/30 shadow-sm">
-                  <h3 className="text-sm sm:text-base md:text-lg font-bold text-gray-900 mb-2 sm:mb-3 flex items-center gap-1.5 sm:gap-2">
-                    <Package className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-gold-600" />
-                    Complete Set Includes
-                  </h3>
-                  <ul className="space-y-1.5 sm:space-y-2">
-                    {product.inclusions.map((item, index) => (
-                      <li key={index} className="text-[11px] sm:text-xs md:text-sm text-gray-700 flex items-start gap-1.5 sm:gap-2">
-                        <span className="text-gold-600 font-bold mt-0.5">✓</span>
-                        <span className="flex-1">{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Scientific Details */}
-              <div className="bg-gray-50 rounded-lg sm:rounded-xl p-3 sm:p-4 border border-navy-700/30">
-                <h3 className="text-sm sm:text-base md:text-lg font-bold text-gray-900 mb-2 sm:mb-3 flex items-center gap-1.5 sm:gap-2">
-                  <Beaker className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-gold-600" />
-                  Scientific Information
-                </h3>
-                <div className="space-y-1.5 sm:space-y-2">
-                  {showPurity && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 text-[11px] sm:text-xs md:text-sm">Purity:</span>
-                      <span className="font-semibold text-gold-600 text-[11px] sm:text-xs md:text-sm">{product.purity_percentage}%</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span className="text-gray-600 text-[11px] sm:text-xs md:text-sm">Storage:</span>
-                    <span className="font-medium text-gray-700 text-[11px] sm:text-xs md:text-sm">{product.storage_conditions}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600 text-[11px] sm:text-xs md:text-sm">Stock:</span>
-                    <span className={`font-medium text-[11px] sm:text-xs md:text-sm ${(product.variations && product.variations.length > 0
-                      ? product.variations.some(v => v.stock_quantity > 0)
-                      : product.stock_quantity > 0)
-                      ? 'text-gold-600'
-                      : 'text-red-600'
-                      }`}>
-                      {product.variations && product.variations.length > 0
-                        ? product.variations.reduce((sum, v) => sum + v.stock_quantity, 0)
-                        : product.stock_quantity} units
-                    </span>
-                  </div>
-                </div>
+          {/* Product info card */}
+          <div className="mt-4 rounded-2xl bg-white border border-charcoal-100 p-4 sm:p-5">
+            {product.category && (
+              <p className="font-heading italic text-brand-600 text-sm mb-1">
+                {product.category}
+              </p>
+            )}
+            <div className="flex items-baseline justify-between gap-3 mb-3">
+              <h2 className="font-heading text-2xl sm:text-3xl font-semibold text-charcoal-900 tracking-tight">
+                {product.name}
+              </h2>
+              <div className="flex items-baseline gap-2 flex-shrink-0">
+                {hasDiscount && (
+                  <span className="text-sm text-charcoal-300 line-through">
+                    {formatPrice(baseOriginal)}
+                  </span>
+                )}
+                <span className="text-2xl sm:text-3xl font-semibold text-charcoal-900">
+                  {formatPrice(unitPrice)}
+                </span>
               </div>
             </div>
 
-            {/* Right Column - Purchase Section */}
-            <div className="space-y-3 sm:space-y-4 md:space-y-6">
-              {/* Price */}
-              <div className="bg-gradient-to-r from-white to-gray-50 rounded-lg sm:rounded-xl p-3 sm:p-4 md:p-6 border-2 border-navy-700/30 shadow-lg">
-                <div className="text-center mb-3 sm:mb-4">
-                  {hasDiscount ? (
-                    <>
-                      {/* Original Price - Strikethrough */}
-                      <div className="flex items-center justify-center gap-2 mb-1">
-                        <span className="text-base sm:text-lg md:text-xl lg:text-2xl text-gray-400 line-through font-medium">
-                          ₱{originalPrice.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
-                        </span>
-                        <span className="text-xs sm:text-sm font-bold text-red-600 bg-red-50 px-2 py-1 rounded">
-                          {Math.round((1 - currentPrice / originalPrice) * 100)}% OFF
-                        </span>
-                      </div>
-                      {/* Sale Price - Prominent Green */}
-                      <div className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-green-600 mb-2">
-                        ₱{currentPrice.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
-                      </div>
-                      <div className="inline-block bg-green-100 text-green-800 px-2 py-0.5 sm:px-2.5 sm:py-1 md:px-3 md:py-1 rounded-full text-[10px] sm:text-xs md:text-sm font-bold border border-green-200">
-                        You Save ₱{(originalPrice - currentPrice).toLocaleString('en-PH', { minimumFractionDigits: 0 })}!
-                      </div>
-                    </>
-                  ) : (
-                    <div className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-gold-600">
-                      ₱{currentPrice.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
-                    </div>
-                  )}
-                </div>
+            {tags.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-3">
+                {tags.map((tag, idx) => (
+                  <span
+                    key={idx}
+                    className="inline-flex items-center px-3 py-1 rounded-full border border-charcoal-200 text-charcoal-700 text-xs sm:text-sm max-w-full truncate"
+                    title={tag}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
 
-                {/* Size Selection */}
-                {product.variations && product.variations.length > 0 && (
-                  <div className="mb-3 sm:mb-4">
-                    <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1.5 sm:mb-2">
-                      Select Size:
-                    </label>
-                    <select
-                      value={selectedVariation?.id || ''}
-                      onChange={(e) => {
-                        const variation = product.variations?.find(v => v.id === e.target.value);
-                        if (variation && variation.stock_quantity > 0) {
-                          setSelectedVariation(variation);
-                        }
-                      }}
-                      className="w-full px-2.5 py-2 sm:px-3 sm:py-2.5 md:px-4 md:py-3 border-2 border-navy-700/30 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-gold-500 focus:border-navy-900 bg-white text-gray-900 font-medium text-xs sm:text-sm md:text-base shadow-sm hover:border-navy-900 transition-colors"
-                    >
-                      {product.variations.map((variation) => {
-                        const isOutOfStock = variation.stock_quantity === 0;
-                        return (
-                          <option
-                            key={variation.id}
-                            value={variation.id}
-                            disabled={isOutOfStock}
-                            className={isOutOfStock ? 'line-through text-gray-400 italic' : ''}
-                          >
-                            {variation.name} - ₱{variation.price.toLocaleString('en-PH')}
-                            {isOutOfStock ? ' (Out of Stock)' : ''}
-                          </option>
-                        );
-                      })}
-                    </select>
-                    {selectedVariation && selectedVariation.stock_quantity === 0 && (
-                      <p className="text-xs text-red-600 mt-1.5 font-semibold">
-                        ⚠️ This product is currently out of stock. Please select another product.
-                      </p>
-                    )}
-                  </div>
-                )}
+            <p className="text-sm sm:text-base text-charcoal-500 leading-relaxed">
+              {product.description}
+            </p>
+          </div>
 
-                {/* Quantity */}
-                <div className="mb-3 sm:mb-4">
-                  <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1.5 sm:mb-2">
-                    Quantity:
-                  </label>
-                  <div className="flex items-center justify-center gap-2 sm:gap-3 md:gap-4">
+          {/* Inclusions (if set product) */}
+          {product.inclusions && product.inclusions.length > 0 && (
+            <div className="mt-4 rounded-2xl bg-cream-100 border border-charcoal-100 p-4 sm:p-5">
+              <p className="text-xs font-semibold tracking-widest text-brand-600 mb-3 uppercase">
+                Set Includes
+              </p>
+              <ul className="space-y-2">
+                {product.inclusions.map((item, index) => (
+                  <li key={index} className="text-sm text-charcoal-700 flex items-start gap-2">
+                    <span className="text-brand-500 font-bold mt-0.5">✓</span>
+                    <span className="flex-1">{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Dosage */}
+          {variations.length > 0 && (
+            <div className="mt-5 flex items-start sm:items-center gap-4 flex-col sm:flex-row">
+              <span className="font-semibold text-charcoal-900 text-base w-24 flex-shrink-0">Dosage</span>
+              <div className="flex flex-wrap gap-2">
+                {variations.map((variation) => {
+                  const outOfStock = variation.stock_quantity === 0;
+                  const isSelected = selectedVariation?.id === variation.id;
+                  return (
                     <button
-                      onClick={decrementQuantity}
-                      className="p-2 sm:p-2.5 md:p-3 bg-white border-2 border-navy-700/30 hover:bg-gold-50 hover:border-navy-900 rounded-lg sm:rounded-xl transition-all shadow-sm"
-                      disabled={!product.available}
+                      key={variation.id}
+                      onClick={() => !outOfStock && setSelectedVariation(variation)}
+                      disabled={outOfStock}
+                      className={`px-5 py-2 rounded-full border text-sm font-semibold transition-all ${
+                        isSelected
+                          ? 'bg-brand-500 text-white border-brand-500'
+                          : 'bg-white text-charcoal-800 border-charcoal-200 hover:border-brand-400 hover:text-brand-600'
+                      } ${outOfStock ? 'opacity-40 cursor-not-allowed line-through' : ''}`}
                     >
-                      <Minus className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-gold-600" />
+                      {variation.name}
                     </button>
-                    <span className="text-lg sm:text-xl md:text-2xl font-bold text-gray-900 min-w-[40px] sm:min-w-[50px] md:min-w-[60px] text-center">
-                      {quantity}
-                    </span>
-                    <button
-                      onClick={incrementQuantity}
-                      className="p-2 sm:p-2.5 md:p-3 bg-white border-2 border-navy-700/30 hover:bg-gold-50 hover:border-navy-900 rounded-lg sm:rounded-xl transition-all shadow-sm"
-                      disabled={!product.available}
-                    >
-                      <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-gold-600" />
-                    </button>
-                  </div>
-                </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
-                {/* Total */}
-                <div className="bg-gradient-to-r from-gray-900 to-black rounded-lg sm:rounded-xl p-2.5 sm:p-3 md:p-4 mb-3 sm:mb-4 border-2 border-navy-900/30 shadow-md">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-300 font-medium text-xs sm:text-sm md:text-base">Total:</span>
-                    <span className="text-xl sm:text-2xl md:text-3xl font-bold text-gold-400">
-                      ₱{(currentPrice * quantity).toLocaleString('en-PH', { minimumFractionDigits: 0 })}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Add to Cart Button */}
+          {/* Quantity + price */}
+          <div className="mt-5 flex items-center gap-4">
+            <span className="font-semibold text-charcoal-900 text-base w-24 flex-shrink-0">Quantity</span>
+            <div className="flex items-center justify-between flex-1 min-w-0">
+              <div className="inline-flex items-center rounded-full border border-charcoal-200 bg-white">
                 <button
-                  onClick={handleAddToCart}
-                  disabled={!product.available || !hasAnyStock || (selectedVariation && selectedVariation.stock_quantity === 0) || (!selectedVariation && product.stock_quantity === 0)}
-                  className="w-full bg-navy-900 hover:bg-navy-800 text-white py-2.5 sm:py-3 md:py-4 rounded-lg sm:rounded-xl font-bold text-sm sm:text-base md:text-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all flex items-center justify-center gap-1.5 sm:gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none border-2 border-navy-900/20 hover:border-navy-900/40"
+                  onClick={decrementQuantity}
+                  aria-label="Decrease quantity"
+                  className="w-10 h-10 flex items-center justify-center text-charcoal-700 hover:bg-cream-100 rounded-l-full transition-colors"
                 >
-                  <ShoppingCart className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
-                  {!product.available
-                    ? 'Unavailable'
-                    : (!hasAnyStock || (selectedVariation && selectedVariation.stock_quantity === 0) || (!selectedVariation && product.stock_quantity === 0)
-                      ? 'Out of Stock'
-                      : 'Add to Cart')}
+                  <Minus className="w-4 h-4" />
+                </button>
+                <span className="min-w-[2rem] text-center font-semibold text-charcoal-900">{quantity}</span>
+                <button
+                  onClick={incrementQuantity}
+                  aria-label="Increase quantity"
+                  className="w-10 h-10 flex items-center justify-center text-charcoal-700 hover:bg-cream-100 rounded-r-full transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
                 </button>
               </div>
-
-              {/* Stock Alert */}
-              {product.available && (product.variations && product.variations.length > 0
-                ? product.variations.some(v => v.stock_quantity > 0 && v.stock_quantity < 10)
-                : product.stock_quantity < 10 && product.stock_quantity > 0) && (
-                  <div className="bg-gold-50 border border-navy-700 sm:border-2 rounded-lg sm:rounded-xl p-3 sm:p-4">
-                    <p className="text-xs sm:text-sm text-gold-800 font-semibold flex items-center gap-1.5 sm:gap-2">
-                      <span className="text-base sm:text-lg md:text-xl">⚠️</span>
-                      Low stock! Only {product.variations && product.variations.length > 0
-                        ? product.variations.reduce((sum, v) => sum + v.stock_quantity, 0)
-                        : product.stock_quantity} units left
-                    </p>
+              <div className="text-right">
+                {hasDiscount && (
+                  <div className="text-xs text-charcoal-300 line-through">
+                    {formatPrice(totalOriginal)}
                   </div>
                 )}
+                <div className="text-2xl sm:text-3xl font-semibold text-charcoal-900">
+                  {formatPrice(totalPrice)}
+                </div>
+                {hasDiscount && (
+                  <div className="text-[10px] font-bold text-brand-600">{discountPercent}% OFF</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Scientific details */}
+          {(product.purity_percentage || product.storage_conditions) && (
+            <div className="mt-5 rounded-2xl bg-cream-100 border border-charcoal-100 p-4">
+              <p className="text-xs font-semibold tracking-widest text-brand-600 mb-3 uppercase">
+                Scientific Information
+              </p>
+              <div className="space-y-1.5 text-sm">
+                {product.purity_percentage ? (
+                  <div className="flex justify-between">
+                    <span className="text-charcoal-500">Purity</span>
+                    <span className="font-medium text-charcoal-900">{product.purity_percentage}%</span>
+                  </div>
+                ) : null}
+                {product.storage_conditions && (
+                  <div className="flex justify-between">
+                    <span className="text-charcoal-500">Storage</span>
+                    <span className="font-medium text-charcoal-900">{product.storage_conditions}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-charcoal-500">Stock</span>
+                  <span className="font-medium text-charcoal-900">
+                    {product.variations && product.variations.length > 0
+                      ? product.variations.reduce((sum, v) => sum + v.stock_quantity, 0)
+                      : product.stock_quantity} units
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Bundle & Save carousel */}
+          {sortedTiers.length > 0 && (() => {
+            type Card = { qty: number; percent: number; mostPopular: boolean };
+            const cards: Card[] = [
+              { qty: 1, percent: 0, mostPopular: false },
+              ...sortedTiers.map((t) => ({
+                qty: t.min_quantity,
+                percent: Number(t.discount_percentage),
+                mostPopular: t.most_popular,
+              })),
+            ];
+            return (
+              <div className="mt-6">
+                <p className="text-xs font-semibold tracking-widest text-charcoal-700 uppercase mb-3">
+                  Bundle &amp; Save
+                </p>
+                <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 snap-x snap-mandatory scrollbar-hide">
+                  {cards.map((card, i) => {
+                    const isSelected = quantity >= card.qty &&
+                      (i === cards.length - 1 || quantity < cards[i + 1].qty);
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setQuantity(card.qty)}
+                        className={`relative flex-shrink-0 snap-start w-44 sm:w-48 rounded-2xl border-2 transition-all p-3 text-left ${
+                          isSelected
+                            ? 'border-brand-500 bg-brand-50/40'
+                            : 'border-charcoal-200 bg-white hover:border-brand-300'
+                        }`}
+                      >
+                        {card.mostPopular && (
+                          <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase bg-brand-600 text-white shadow-sm whitespace-nowrap">
+                            Most Popular
+                          </span>
+                        )}
+                        <div className="h-16 sm:h-20 flex items-end justify-center mb-2">
+                          {Array.from({ length: Math.min(card.qty, 4) }).map((_, idx) => (
+                            <div
+                              key={idx}
+                              className="-mx-1 w-9 h-16 sm:w-10 sm:h-20 rounded-md overflow-hidden bg-cream-100 border border-charcoal-100 flex items-center justify-center"
+                              style={{ zIndex: idx }}
+                            >
+                              {product.image_url ? (
+                                <img src={product.image_url} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <Package className="w-5 h-5 text-charcoal-300" />
+                              )}
+                            </div>
+                          ))}
+                          {card.qty > 4 && (
+                            <span className="ml-1 text-[10px] font-semibold text-charcoal-500">+{card.qty - 4}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs sm:text-sm font-bold text-charcoal-900 uppercase tracking-wide">
+                            {card.qty} {card.qty === 1 ? 'Vial' : 'Vials'}
+                          </span>
+                          {card.percent > 0 ? (
+                            <span className="text-xs sm:text-sm font-bold text-brand-600">
+                              {card.percent}% OFF
+                            </span>
+                          ) : (
+                            <span className="text-[10px] sm:text-xs text-charcoal-400">Base</span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                {previewTier && (
+                  <div className="mt-3 flex items-baseline justify-between text-sm">
+                    <span className="text-charcoal-500">Bundle total ({quantity}× at {Number(previewTier.discount_percentage)}% off)</span>
+                    <span className="font-bold text-charcoal-900">{formatPrice(bundleTotal)}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Research-only disclaimer */}
+          <div className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-900 text-xs sm:text-sm leading-relaxed">
+            <p className="font-bold mb-1 uppercase tracking-wide text-[11px]">For Research Purposes Only</p>
+            <p>
+              This compound is not FDA approved. All data presented is from clinical trials for educational reference.
+            </p>
+          </div>
+
+          {/* CoA + Add to cart */}
+          <div className="mt-5 flex items-center gap-3">
+            {coaUrl ? (
+              <a
+                href={coaUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-5 py-3 rounded-full border border-charcoal-200 text-charcoal-900 text-sm font-semibold hover:bg-cream-100 hover:border-brand-400 hover:text-brand-600 transition-colors inline-flex items-center gap-1.5 flex-shrink-0"
+              >
+                <FileText className="w-4 h-4" />
+                View COA
+              </a>
+            ) : (
+              <button
+                disabled
+                className="px-5 py-3 rounded-full border border-charcoal-200 text-charcoal-400 text-sm font-semibold cursor-not-allowed inline-flex items-center gap-1.5 flex-shrink-0"
+              >
+                <FileText className="w-4 h-4" />
+                COA
+              </button>
+            )}
+            <button
+              onClick={handleAddToCart}
+              disabled={isOutOfStock}
+              className="flex-1 py-3 rounded-full bg-brand-500 text-white text-base font-semibold hover:bg-brand-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isOutOfStock ? 'Out of Stock' : 'Add to cart'}
+              {!isOutOfStock && <ShoppingCart className="w-5 h-5" />}
+            </button>
+          </div>
+
+          {/* Shipping info */}
+          <div className="mt-4 rounded-2xl bg-cream-100 border border-charcoal-100 p-3 grid grid-cols-3 gap-2 text-center">
+            <div className="flex flex-col items-center gap-1">
+              <Truck className="w-5 h-5 text-brand-600" />
+              <p className="text-[11px] text-charcoal-700 leading-tight">{shippingWindow}</p>
+            </div>
+            <div className="flex flex-col items-center gap-1">
+              <ShieldCheck className="w-5 h-5 text-brand-600" />
+              <p className="text-[11px] text-charcoal-700 leading-tight">
+                <span className="underline decoration-dotted">Free shipment protection</span>
+              </p>
+            </div>
+            <div className="flex flex-col items-center gap-1">
+              <Zap className="w-5 h-5 text-brand-600" />
+              <p className="text-[11px] text-charcoal-700 leading-tight">Overnight shipping available</p>
+            </div>
+          </div>
+
+          {/* COA inline viewer */}
+          {coaUrl && (
+            <div className="mt-5 rounded-2xl bg-white border border-charcoal-100 overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 bg-cream-100 border-b border-charcoal-100">
+                <p className="text-xs font-semibold tracking-widest text-brand-600 uppercase flex items-center gap-2">
+                  <FileText className="w-4 h-4" />
+                  Certificate of Analysis
+                </p>
+                <a
+                  href={coaUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-semibold text-brand-600 hover:text-brand-700"
+                >
+                  Open ↗
+                </a>
+              </div>
+              {/\.pdf(\?.*)?$/i.test(coaUrl) ? (
+                <iframe
+                  src={coaUrl}
+                  title="Certificate of Analysis"
+                  className="w-full h-[420px] sm:h-[520px] bg-charcoal-50"
+                />
+              ) : (
+                <img
+                  src={coaUrl}
+                  alt="Certificate of Analysis"
+                  className="w-full max-h-[520px] object-contain bg-charcoal-50"
+                />
+              )}
+            </div>
+          )}
+
+          {/* Peptide Protocol */}
+          {protocols && protocols.length > 0 && (
+            <div className="mt-5 rounded-2xl bg-white border border-charcoal-100 p-4 sm:p-5">
+              <p className="text-xs font-semibold tracking-widest text-brand-600 uppercase mb-3">
+                Peptide Protocol
+              </p>
+              <div className="space-y-4">
+                {protocols.map((p) => (
+                  <div key={p.id} className="border-t first:border-t-0 border-charcoal-100 pt-3 first:pt-0">
+                    {p.name && (
+                      <p className="font-semibold text-charcoal-900 mb-2">{p.name}</p>
+                    )}
+                    <dl className="grid grid-cols-2 gap-2 text-sm">
+                      {p.dosage && (
+                        <>
+                          <dt className="text-charcoal-500">Dosage</dt>
+                          <dd className="text-charcoal-900 font-medium">{p.dosage}</dd>
+                        </>
+                      )}
+                      {p.frequency && (
+                        <>
+                          <dt className="text-charcoal-500">Frequency</dt>
+                          <dd className="text-charcoal-900 font-medium">{p.frequency}</dd>
+                        </>
+                      )}
+                      {p.duration && (
+                        <>
+                          <dt className="text-charcoal-500">Duration</dt>
+                          <dd className="text-charcoal-900 font-medium">{p.duration}</dd>
+                        </>
+                      )}
+                      {p.storage && (
+                        <>
+                          <dt className="text-charcoal-500">Storage</dt>
+                          <dd className="text-charcoal-900 font-medium">{p.storage}</dd>
+                        </>
+                      )}
+                    </dl>
+                    {p.notes && p.notes.length > 0 && (
+                      <ul className="mt-3 space-y-1 list-disc pl-5 text-sm text-charcoal-700">
+                        {p.notes.map((n, i) => (
+                          <li key={i}>{n}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {p.image_url && (
+                      <img
+                        src={p.image_url}
+                        alt={p.name}
+                        className="mt-3 w-full max-h-80 object-contain rounded-lg border border-charcoal-100"
+                      />
+                    )}
+                    {p.file_url && (
+                      <a
+                        href={p.file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-brand-600 hover:text-brand-700"
+                      >
+                        <FileText className="w-4 h-4" />
+                        Open full protocol
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Payment methods */}
+          <div className="mt-4 flex items-center gap-3 flex-wrap">
+            <span className="text-sm text-charcoal-500">We accept</span>
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-1 rounded-md bg-charcoal-900 text-white text-[10px] font-bold tracking-tight">Pay</span>
+              <span className="px-2 py-1 rounded-md border border-charcoal-200 text-charcoal-700 text-[10px] font-extrabold italic tracking-wide">VISA</span>
+              <span className="px-2 py-1 rounded-md border border-charcoal-200 text-charcoal-700 text-[10px] font-bold">GCash</span>
+              <span className="px-2 py-1 rounded-md border border-charcoal-200 text-charcoal-700 text-[10px] font-bold">Maya</span>
             </div>
           </div>
         </div>
+
+        {/* Sticky compact action bar */}
+        {!asPage && (
+        <div
+          className="border-t border-charcoal-100 bg-white px-4 sm:px-5 py-3 flex-shrink-0"
+          style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-charcoal-700 truncate pr-2">{product.name}</span>
+            <span className="text-base font-semibold text-charcoal-900 flex-shrink-0">
+              {formatPrice(unitPrice)}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {variations.length > 0 ? (
+              <div className="flex items-center gap-2 flex-shrink min-w-0 overflow-x-auto scrollbar-hide">
+                {variations.map((variation) => {
+                  const outOfStock = variation.stock_quantity === 0;
+                  const isSelected = selectedVariation?.id === variation.id;
+                  return (
+                    <button
+                      key={variation.id}
+                      onClick={() => !outOfStock && setSelectedVariation(variation)}
+                      disabled={outOfStock}
+                      className={`px-3 py-2 rounded-lg border text-xs font-semibold transition-all flex-shrink-0 ${
+                        isSelected
+                          ? 'bg-brand-500 text-white border-brand-500'
+                          : 'bg-white text-charcoal-800 border-charcoal-200'
+                      } ${outOfStock ? 'opacity-40 cursor-not-allowed line-through' : ''}`}
+                    >
+                      {variation.name}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex-1" />
+            )}
+            <button
+              onClick={handleAddToCart}
+              disabled={isOutOfStock}
+              className="flex-1 ml-auto py-2.5 rounded-full bg-brand-500 text-white text-sm font-semibold hover:bg-brand-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed min-w-[7rem]"
+            >
+              {isOutOfStock ? 'Unavailable' : 'Add'}
+              {!isOutOfStock && <ShoppingCart className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+        )}
       </div>
     </div>
   );

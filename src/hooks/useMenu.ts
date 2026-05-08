@@ -113,76 +113,47 @@ export function useMenu() {
   const fetchProducts = async () => {
     try {
       setLoading(true);
-      console.log('🔄 Fetching products from database...');
 
-      // Force fresh data by clearing any potential cache
-      const timestamp = Date.now();
       const { data, error } = await supabase
         .from('products')
-        .select('id, name, description, category, base_price, discount_price, discount_start_date, discount_end_date, discount_active, purity_percentage, molecular_weight, cas_number, sequence, storage_conditions, inclusions, stock_quantity, available, featured, image_url, safety_sheet_url, created_at, updated_at')
+        .select('id, name, slug, description, category, base_price, discount_price, discount_start_date, discount_end_date, discount_active, purity_percentage, molecular_weight, cas_number, sequence, storage_conditions, inclusions, stock_quantity, available, featured, image_url, safety_sheet_url, coa_url, created_at, updated_at')
         .eq('available', true)
         .order('featured', { ascending: false })
         .order('name', { ascending: true });
 
       if (error) throw error;
 
-      console.log(`📦 Found ${data?.length || 0} products`);
+      const productList = data || [];
+      const productIds = productList.map(p => p.id);
 
-      // Log products with discounts
-      const productsWithDiscounts = (data || []).filter(p => p.discount_active && p.discount_price);
-      if (productsWithDiscounts.length > 0) {
-        console.log(`💰 Products with ACTIVE discounts: ${productsWithDiscounts.length}`,
-          productsWithDiscounts.map(p => ({
-            name: p.name,
-            base_price: p.base_price,
-            discount_price: p.discount_price,
-            discount_active: p.discount_active,
-            savings: p.base_price - (p.discount_price || 0)
-          }))
-        );
-      } else {
-        console.log('⚠️ No products found with discount_active=true AND discount_price set');
+      // Batch all variations into a single query (was N+1 per product)
+      let variationsByProduct = new Map<string, ProductVariation[]>();
+      if (productIds.length > 0) {
+        const { data: allVariations, error: variationsError } = await supabase
+          .from('product_variations')
+          .select('*')
+          .in('product_id', productIds)
+          .order('quantity_mg', { ascending: true });
+
+        if (variationsError) throw variationsError;
+
+        for (const v of allVariations || []) {
+          const list = variationsByProduct.get(v.product_id) || [];
+          list.push(v);
+          variationsByProduct.set(v.product_id, list);
+        }
       }
 
-      // Log products with images for debugging
-      const productsWithImages = (data || []).filter(p => p.image_url);
-      if (productsWithImages.length > 0) {
-        console.log(`🖼️ Products with images: ${productsWithImages.length}`,
-          productsWithImages.map(p => ({ name: p.name, image_url: p.image_url?.substring(0, 50) + '...' }))
-        );
-      }
+      const productsWithVariations = productList.map(product => ({
+        ...product,
+        variations: variationsByProduct.get(product.id) || [],
+      }));
 
-      // Fetch variations for each product
-      const productsWithVariations = await Promise.all(
-        (data || []).map(async (product) => {
-          const { data: variations } = await supabase
-            .from('product_variations')
-            .select('*')
-            .eq('product_id', product.id)
-            .order('quantity_mg', { ascending: true });
-
-          if (variations && variations.length > 0) {
-            console.log(`  └─ ${product.name}: ${variations.length} variations, prices:`, variations.map(v => `${v.name}:₱${v.price}`));
-          }
-
-          // Log if product has image_url
-          if (product.image_url) {
-            console.log(`  🖼️ ${product.name} has image: ${product.image_url.substring(0, 60)}...`);
-          }
-
-          return {
-            ...product,
-            variations: variations || []
-          };
-        })
-      );
-
-      console.log('✅ Products updated successfully at', new Date().toLocaleTimeString());
       setProducts(productsWithVariations);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch products');
-      console.error('❌ Error fetching products:', err);
+      console.error('Error fetching products:', err);
     } finally {
       setLoading(false);
     }

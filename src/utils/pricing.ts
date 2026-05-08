@@ -1,4 +1,4 @@
-import type { GlobalDiscount, Product, ProductVariation } from '../types';
+import type { CartItem, GlobalDiscount, Product, ProductBundleTier, ProductVariation } from '../types';
 
 interface DiscountedPriceResult {
   price: number;
@@ -80,5 +80,82 @@ export const resolveProductPricing = (
     hasGlobalDiscount: false,
     hasIndividualDiscount,
     originalPrice,
+  };
+};
+
+// ----- Bundle (per-product quantity) discount logic -----
+
+export type BundleTiersMap = Record<string, ProductBundleTier[]>;
+
+export interface PricedLine {
+  index: number;
+  unitBasePrice: number;
+  bundlePercent: number;
+  unitFinalPrice: number;
+  lineSubtotal: number;
+  lineSavings: number;
+  appliedTier: ProductBundleTier | null;
+}
+
+export interface CartPricing {
+  lines: PricedLine[];
+  subtotalBeforeBundle: number;
+  bundleSavings: number;
+  subtotal: number;
+  hasBundleDiscount: boolean;
+}
+
+export const getCartItemUnitBasePrice = (
+  item: CartItem,
+  globalDiscount?: GlobalDiscount | null
+): number => {
+  return resolveProductPricing(item.product, item.variation, globalDiscount).price;
+};
+
+export const pickBundleTier = (
+  tiers: ProductBundleTier[] | undefined,
+  quantity: number
+): ProductBundleTier | null => {
+  if (!tiers || tiers.length === 0) return null;
+  return tiers
+    .filter((t) => t.active && quantity >= t.min_quantity)
+    .sort((a, b) => b.min_quantity - a.min_quantity)[0] ?? null;
+};
+
+export const computeCartPricing = (
+  items: CartItem[],
+  tiersByProduct: BundleTiersMap,
+  globalDiscount?: GlobalDiscount | null
+): CartPricing => {
+  const lines: PricedLine[] = items.map((item, index) => {
+    const unitBasePrice = getCartItemUnitBasePrice(item, globalDiscount);
+    const tier = pickBundleTier(tiersByProduct[item.product.id], item.quantity);
+    const bundlePercent = tier ? Number(tier.discount_percentage) : 0;
+    const unitFinalPrice = unitBasePrice * (1 - bundlePercent / 100);
+    const lineSubtotal = unitFinalPrice * item.quantity;
+    const lineSavings = (unitBasePrice - unitFinalPrice) * item.quantity;
+    return {
+      index,
+      unitBasePrice,
+      bundlePercent,
+      unitFinalPrice,
+      lineSubtotal,
+      lineSavings,
+      appliedTier: tier,
+    };
+  });
+
+  const subtotalBeforeBundle = items.reduce(
+    (sum, item, i) => sum + lines[i].unitBasePrice * item.quantity,
+    0
+  );
+  const bundleSavings = lines.reduce((sum, l) => sum + l.lineSavings, 0);
+  const subtotal = subtotalBeforeBundle - bundleSavings;
+  return {
+    lines,
+    subtotalBeforeBundle,
+    bundleSavings,
+    subtotal,
+    hasBundleDiscount: bundleSavings > 0,
   };
 };

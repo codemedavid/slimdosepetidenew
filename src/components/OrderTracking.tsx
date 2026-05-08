@@ -2,18 +2,26 @@ import React, { useState } from 'react';
 import { Search, Package, Truck, CheckCircle, Clock, AlertCircle, ArrowRight, ExternalLink } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
+interface TrackingOrderItem {
+    product_name: string;
+    quantity: number;
+}
+
 interface TrackingOrder {
     id: string;
+    order_number: string | null;
     order_status: string;
     payment_status: string;
     tracking_number: string | null;
+    tracking_courier: string | null;
+    shipping_provider: string | null;
     shipping_note: string | null;
     total_price: number;
     shipping_fee: number;
-    order_items: {
-        product_name: string;
-        quantity: number;
-    }[];
+    items: TrackingOrderItem[];
+    courier_code: string | null;
+    courier_name: string | null;
+    tracking_url_template: string | null;
     created_at: string;
 }
 
@@ -34,26 +42,18 @@ const OrderTracking: React.FC = () => {
         setHasSearched(true);
 
         try {
-            // Use secure RPC function to fetch order
-            const { data, error } = await supabase
-                .rpc('get_order_details', {
-                    order_id_input: orderId.trim()
-                })
-                .single();
+            const { data, error } = await supabase.rpc('get_order_details', {
+                order_id_input: orderId.trim()
+            });
 
             if (error) {
-                // If no rows returned by function, it usually returns a different error or null data depending on setup,
-                // but .single() will throw if 0 rows.
-                if (error.code === 'PGRST116') {
-                    setError('Order not found. Please check your Order ID and try again.');
-                } else {
-                    throw error;
-                }
-            } else if (data) {
-                // RPC returns the row directly when using single()
+                throw error;
+            }
+
+            if (data) {
                 setOrder(data as TrackingOrder);
             } else {
-                setError('Order not found.');
+                setError('Order not found. Please check your Order ID and try again.');
             }
         } catch (err) {
             console.error('Error fetching order:', err);
@@ -90,7 +90,7 @@ const OrderTracking: React.FC = () => {
                                 type="text"
                                 value={orderId}
                                 onChange={(e) => setOrderId(e.target.value)}
-                                placeholder="Enter Order ID (e.g., 8a2b3c...)"
+                                placeholder="Enter Order ID (e.g., SDP12345)"
                                 className="w-full pl-12 pr-4 py-3 rounded-xl border-2 border-gray-200 focus:border-navy-900 focus:ring-2 focus:ring-gold-500/20 outline-none transition-all text-lg"
                             />
                         </div>
@@ -141,7 +141,7 @@ const OrderTracking: React.FC = () => {
                                 </div>
                                 <div className="text-right">
                                     <p className="text-gray-400 text-sm">Order ID</p>
-                                    <p className="font-mono text-lg">{order.id.slice(0, 8).toUpperCase()}</p>
+                                    <p className="font-mono text-lg">{order.order_number || order.id.slice(0, 8).toUpperCase()}</p>
                                 </div>
                             </div>
 
@@ -200,19 +200,29 @@ const OrderTracking: React.FC = () => {
                                         {order.tracking_number ? (
                                             <div className="space-y-4">
                                                 <div>
-                                                    <p className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-1">Tracking Number (J&T)</p>
+                                                    <p className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-1">
+                                                        Tracking Number{order.courier_name ? ` (${order.courier_name})` : order.tracking_courier ? ` (${order.tracking_courier})` : ''}
+                                                    </p>
                                                     <p className="text-xl font-mono font-bold text-navy-900 tracking-wide">{order.tracking_number}</p>
                                                 </div>
 
-                                                <a
-                                                    href={`https://www.jtexpress.ph/trajectoryQuery?bills=${order.tracking_number}`}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="block w-full py-3 bg-blue-600 hover:bg-blue-700 text-white text-center rounded-lg font-bold transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2"
-                                                >
-                                                    Track on J&T Express
-                                                    <ExternalLink className="w-4 h-4" />
-                                                </a>
+                                                {(() => {
+                                                    const trackingUrl = order.tracking_url_template
+                                                        ? order.tracking_url_template.replace('{tracking_number}', order.tracking_number).replace('{TRACKING_NUMBER}', order.tracking_number)
+                                                        : `https://www.jtexpress.ph/trajectoryQuery?bills=${order.tracking_number}`;
+                                                    const label = order.courier_name ? `Track on ${order.courier_name}` : 'Track on Courier';
+                                                    return (
+                                                        <a
+                                                            href={trackingUrl}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="block w-full py-3 bg-blue-600 hover:bg-blue-700 text-white text-center rounded-lg font-bold transition-colors shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+                                                        >
+                                                            {label}
+                                                            <ExternalLink className="w-4 h-4" />
+                                                        </a>
+                                                    );
+                                                })()}
                                             </div>
                                         ) : (
                                             <div className="text-center py-4 text-gray-500">
@@ -237,7 +247,7 @@ const OrderTracking: React.FC = () => {
                                         <div className="bg-white rounded-xl p-5 border-2 border-gray-100">
                                             <h3 className="font-bold text-navy-900 mb-3 text-sm uppercase tracking-wider border-b pb-2">Order Summary</h3>
                                             <div className="space-y-2 mb-4">
-                                                {order.order_items.map((item, idx) => (
+                                                {(order.items || []).map((item, idx) => (
                                                     <div key={idx} className="flex justify-between text-sm">
                                                         <span className="text-gray-600">{item.quantity}x {item.product_name}</span>
                                                     </div>

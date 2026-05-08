@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Plus, Edit, Trash2, Save, X, ArrowLeft, TrendingUp, Package, Users, FolderOpen, CreditCard, Sparkles, Layers, Shield, RefreshCw, Warehouse, ShoppingCart, HelpCircle, MapPin, Settings, Tag, BookOpen } from 'lucide-react';
-import type { Product } from '../types';
+import type { Product, ProductBundleTier } from '../types';
+import { supabase } from '../lib/supabase';
 import { useMenu } from '../hooks/useMenu';
 import { useCategories } from '../hooks/useCategories';
 import ImageUpload from './ImageUpload';
@@ -44,6 +45,7 @@ const AdminDashboard: React.FC = () => {
 
   const [formData, setFormData] = useState<Partial<Product>>({
     name: '',
+    slug: '',
     description: '',
     base_price: 0,
     category: 'research',
@@ -56,9 +58,84 @@ const AdminDashboard: React.FC = () => {
     storage_conditions: 'Store at -20°C',
     stock_quantity: 0,
     image_url: null,
+    safety_sheet_url: null,
+    coa_url: null,
     discount_active: false,
     inclusions: null
   });
+
+  type BundleTierDraft = { id?: string; min_quantity: number; discount_percentage: number; active: boolean; most_popular: boolean };
+  const [bundleTiers, setBundleTiers] = useState<BundleTierDraft[]>([]);
+
+  // Load existing bundle tiers when editing a product
+  useEffect(() => {
+    if (currentView !== 'edit' || !editingProduct) {
+      if (currentView === 'add') setBundleTiers([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('product_bundle_tiers')
+        .select('*')
+        .eq('product_id', editingProduct.id)
+        .order('min_quantity', { ascending: true });
+      if (cancelled) return;
+      setBundleTiers(
+        ((data as ProductBundleTier[]) ?? []).map((t) => ({
+          id: t.id,
+          min_quantity: t.min_quantity,
+          discount_percentage: Number(t.discount_percentage),
+          active: t.active,
+          most_popular: t.most_popular ?? false,
+        }))
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentView, editingProduct]);
+
+  const slugify = (name: string) =>
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+  const persistBundleTiers = async (productId: string) => {
+    // Replace strategy: delete tiers no longer present, upsert the rest
+    const { data: existing } = await supabase
+      .from('product_bundle_tiers')
+      .select('id')
+      .eq('product_id', productId);
+    const existingIds = new Set(((existing as { id: string }[]) ?? []).map((t) => t.id));
+    const keepIds = new Set(bundleTiers.filter((t) => t.id).map((t) => t.id as string));
+    const toDelete = [...existingIds].filter((id) => !keepIds.has(id));
+    if (toDelete.length > 0) {
+      await supabase.from('product_bundle_tiers').delete().in('id', toDelete);
+    }
+    if (bundleTiers.length > 0) {
+      // Enforce only one most_popular row at a time
+      let popularSeen = false;
+      const rows = bundleTiers.map((t) => {
+        const mp = t.most_popular && !popularSeen;
+        if (mp) popularSeen = true;
+        return {
+          ...(t.id ? { id: t.id } : {}),
+          product_id: productId,
+          min_quantity: Math.max(2, Math.floor(t.min_quantity)),
+          discount_percentage: Number(t.discount_percentage),
+          active: t.active,
+          most_popular: mp,
+          updated_at: new Date().toISOString(),
+        };
+      });
+      const { error } = await supabase
+        .from('product_bundle_tiers')
+        .upsert(rows, { onConflict: 'id' });
+      if (error) throw error;
+    }
+  };
 
   const handleAddProduct = () => {
     setCurrentView('add');
@@ -79,6 +156,7 @@ const AdminDashboard: React.FC = () => {
       storage_conditions: 'Store at -20°C',
       stock_quantity: 0,
       image_url: null,
+      safety_sheet_url: null,
       discount_active: false,
       inclusions: null
     });
@@ -175,12 +253,18 @@ const AdminDashboard: React.FC = () => {
     try {
       setIsProcessing(true);
 
+      // Default slug from name if not provided
+      if (!formData.slug || !formData.slug.trim()) {
+        formData.slug = slugify(formData.name || '');
+      }
+
       // Prepare data for saving - convert undefined to null for nullable fields
       const prepareData = (data: Partial<Product>) => {
         const prepared = { ...data };
         // Convert undefined to null for nullable fields
         if (prepared.image_url === undefined) prepared.image_url = null;
         if (prepared.safety_sheet_url === undefined) prepared.safety_sheet_url = null;
+        if (prepared.coa_url === undefined) prepared.coa_url = null;
         if (prepared.discount_price === undefined) prepared.discount_price = null;
         if (prepared.molecular_weight === undefined) prepared.molecular_weight = null;
         if (prepared.cas_number === undefined) prepared.cas_number = null;
@@ -193,6 +277,7 @@ const AdminDashboard: React.FC = () => {
       const pickProductDbFields = (data: Partial<Product>) => {
         const allowedKeys: (keyof Product)[] = [
           'name',
+          'slug',
           'description',
           'category',
           'base_price',
@@ -208,6 +293,7 @@ const AdminDashboard: React.FC = () => {
           'featured',
           'image_url',
           'safety_sheet_url',
+          'coa_url',
         ];
 
         const dbPayload: Partial<Product> = {};
@@ -266,6 +352,13 @@ const AdminDashboard: React.FC = () => {
           throw new Error(result.error || 'Failed to update product');
         }
 
+        try {
+          await persistBundleTiers(editingProduct.id);
+        } catch (e) {
+          console.error('❌ Bundle tier save failed:', e);
+          alert(`Product saved but bundle tier update failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+        }
+
         // Verify the image was saved
         if (result.data && result.data.image_url !== preparedData.image_url) {
           console.warn('⚠️ Image URL mismatch after save:', {
@@ -302,6 +395,15 @@ const AdminDashboard: React.FC = () => {
           throw new Error(result.error);
         }
         console.log('✅ Product created successfully');
+
+        if (result.data?.id && bundleTiers.length > 0) {
+          try {
+            await persistBundleTiers(result.data.id);
+          } catch (e) {
+            console.error('❌ Bundle tier save failed:', e);
+            alert(`Product created but bundle tier save failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+          }
+        }
       }
 
       // Refresh products to ensure UI is updated
@@ -367,7 +469,7 @@ const AdminDashboard: React.FC = () => {
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-theme-bg flex items-center justify-center px-4">
-        <div className="bg-white rounded-xl shadow-soft p-6 md:p-8 w-full max-w-md border border-navy-900/20">
+        <div className="bg-white rounded-xl shadow-soft p-6 md:p-8 w-full max-w-md border border-charcoal-100">
           <div className="text-center mb-6">
             <div className="relative mx-auto w-16 h-16 rounded-full overflow-hidden mb-4 border-2 border-theme-accent/30">
               <img
@@ -389,7 +491,7 @@ const AdminDashboard: React.FC = () => {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 border border-navy-900/20 rounded-lg focus:ring-2 focus:ring-theme-accent focus:border-theme-accent transition-colors"
+                className="w-full px-4 py-3 border border-charcoal-100 rounded-lg focus:ring-2 focus:ring-theme-accent focus:border-theme-accent transition-colors"
                 placeholder="Enter admin password"
                 required
               />
@@ -400,7 +502,7 @@ const AdminDashboard: React.FC = () => {
               )}
             </div>
 
-            <button type="submit" className="w-full bg-navy-900 hover:bg-navy-800 text-white py-3 rounded-lg font-semibold transition-all shadow-md hover:shadow-lg">
+            <button type="submit" className="w-full bg-brand-500 hover:bg-brand-600 text-white py-3 rounded-lg font-semibold transition-all shadow-md hover:shadow-lg">
               Access Dashboard
             </button>
           </form>
@@ -413,7 +515,7 @@ const AdminDashboard: React.FC = () => {
     return (
       <div className="min-h-screen bg-theme-bg flex items-center justify-center px-4">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-navy-900/20 border-t-theme-accent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="w-12 h-12 border-4 border-charcoal-100 border-t-theme-accent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-sm text-gray-600 font-medium">Loading...</p>
         </div>
       </div>
@@ -437,7 +539,7 @@ const AdminDashboard: React.FC = () => {
                     <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
                     <span className="text-xs md:text-sm">Back</span>
                   </button>
-                  <h1 className="text-sm md:text-base font-bold text-navy-900">
+                  <h1 className="text-sm md:text-base font-bold text-brand-500">
                     {currentView === 'add' ? '✨ Add New' : '✏️ Edit Product'}
                   </h1>
                 </div>
@@ -473,10 +575,39 @@ const AdminDashboard: React.FC = () => {
                     <input
                       type="text"
                       value={formData.name || ''}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      onChange={(e) => {
+                        const newName = e.target.value;
+                        setFormData((prev) => {
+                          const autoSlug = !prev.slug || prev.slug === slugify(prev.name || '');
+                          return {
+                            ...prev,
+                            name: newName,
+                            slug: autoSlug ? slugify(newName) : prev.slug,
+                          };
+                        });
+                      }}
                       className="input-field text-sm"
                       placeholder="e.g., BPC-157 5mg"
                     />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">URL Slug</label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 whitespace-nowrap">/</span>
+                      <input
+                        type="text"
+                        value={formData.slug || ''}
+                        onChange={(e) =>
+                          setFormData({ ...formData, slug: slugify(e.target.value) })
+                        }
+                        className="input-field text-sm"
+                        placeholder="bpc-157-5mg"
+                      />
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      Auto-generated from the name. Edit to customize the product URL.
+                    </p>
                   </div>
 
                   <div className="md:col-span-2">
@@ -752,6 +883,133 @@ const AdminDashboard: React.FC = () => {
                 />
               </div>
 
+              {/* Certificate of Analysis (CoA) */}
+              <div>
+                <h3 className="text-sm md:text-base font-bold text-gray-900 mb-2 md:mb-3 flex items-center gap-1.5">
+                  <span className="text-base md:text-lg">📄</span>
+                  Certificate of Analysis (COA)
+                </h3>
+                <p className="text-xs text-gray-500 mb-2">
+                  Paste the COA URL (PDF or image link). Renders inline on the product page and as a "View COA" button beside Add to Cart.
+                </p>
+                <input
+                  type="url"
+                  value={formData.coa_url || ''}
+                  onChange={(e) => {
+                    const trimmed = e.target.value.trim();
+                    setFormData({ ...formData, coa_url: trimmed === '' ? null : trimmed });
+                  }}
+                  className="input-field text-sm"
+                  placeholder="https://example.com/coa.pdf"
+                />
+                {formData.coa_url && (
+                  <a
+                    href={formData.coa_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block mt-2 text-xs font-semibold text-theme-accent hover:underline"
+                  >
+                    Open COA link ↗
+                  </a>
+                )}
+              </div>
+
+              {/* Bundle Discounts */}
+              <div>
+                <h3 className="text-sm md:text-base font-bold text-gray-900 mb-2 md:mb-3 flex items-center gap-1.5">
+                  <span className="text-base md:text-lg">🎁</span>
+                  Bundle Discounts (per-product quantity)
+                </h3>
+                <p className="text-xs text-gray-500 mb-2">
+                  Auto-applied when a customer buys 2 or more of this product. Highest matching tier wins. Bundle discount can't be combined with promo codes.
+                </p>
+
+                <div className="space-y-2">
+                  {bundleTiers.length === 0 && (
+                    <p className="text-xs text-gray-400 italic">No bundle tiers — add one to enable bundle discounts.</p>
+                  )}
+                  {bundleTiers.map((tier, idx) => (
+                    <div key={idx} className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg p-2">
+                      <div className="flex-1 grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-semibold text-gray-600 mb-0.5">Min quantity</label>
+                          <input
+                            type="number"
+                            min={2}
+                            value={tier.min_quantity}
+                            onChange={(e) => {
+                              const v = Math.max(2, Number(e.target.value) || 2);
+                              setBundleTiers(bundleTiers.map((t, i) => (i === idx ? { ...t, min_quantity: v } : t)));
+                            }}
+                            className="input-field text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold text-gray-600 mb-0.5">Discount %</label>
+                          <input
+                            type="number"
+                            min={0.1}
+                            max={100}
+                            step="0.1"
+                            value={tier.discount_percentage}
+                            onChange={(e) => {
+                              const v = Math.min(100, Math.max(0, Number(e.target.value) || 0));
+                              setBundleTiers(bundleTiers.map((t, i) => (i === idx ? { ...t, discount_percentage: v } : t)));
+                            }}
+                            className="input-field text-sm"
+                          />
+                        </div>
+                      </div>
+                      <label className="flex items-center gap-1 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={tier.active}
+                          onChange={(e) =>
+                            setBundleTiers(bundleTiers.map((t, i) => (i === idx ? { ...t, active: e.target.checked } : t)))
+                          }
+                        />
+                        Active
+                      </label>
+                      <label className="flex items-center gap-1 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={tier.most_popular}
+                          onChange={(e) =>
+                            setBundleTiers(bundleTiers.map((t, i) => ({
+                              ...t,
+                              most_popular: i === idx ? e.target.checked : false,
+                            })))
+                          }
+                        />
+                        Most Popular
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setBundleTiers(bundleTiers.filter((_, i) => i !== idx))}
+                        className="p-1.5 text-red-500 hover:bg-red-50 rounded"
+                        title="Remove tier"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextMin = bundleTiers.length === 0
+                      ? 2
+                      : Math.max(...bundleTiers.map((t) => t.min_quantity)) + 1;
+                    setBundleTiers([...bundleTiers, { min_quantity: nextMin, discount_percentage: 5, active: true, most_popular: false }]);
+                  }}
+                  className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-300 hover:bg-gray-50"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add bundle tier
+                </button>
+              </div>
+
             </div>
           </div>
         </div>
@@ -761,28 +1019,39 @@ const AdminDashboard: React.FC = () => {
 
   // Products List View
   if (currentView === 'products') {
+    const ACCENT = '#3C6CA8';
+    const ACCENT_DARK = '#264874';
+    const CREAM = '#FFFCF6';
     return (
       <>
         {variationManagerModal}
-        <div className="min-h-screen bg-gradient-to-br from-white via-gray-50 to-white">
-          <div className="bg-white shadow-md border-b border-gray-200">
-            <div className="max-w-6xl mx-auto px-3 sm:px-4">
-              <div className="flex items-center justify-between h-12 md:h-14">
-                <div className="flex items-center space-x-2">
+        <div className="min-h-screen" style={{ backgroundColor: CREAM }}>
+          {/* Top bar */}
+          <div className="bg-white border-b border-charcoal-100 sticky top-0 z-30">
+            <div className="max-w-6xl mx-auto px-3 sm:px-5">
+              <div className="flex items-center justify-between h-14">
+                <div className="flex items-center gap-3 min-w-0">
                   <button
                     onClick={() => setCurrentView('dashboard')}
-                    className="text-gray-700 hover:text-theme-accent transition-colors flex items-center gap-1 group"
+                    className="flex items-center gap-1.5 text-charcoal-500 transition-colors group"
+                    style={{ ['--hover-color' as string]: ACCENT }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = ACCENT; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = ''; }}
                   >
                     <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
-                    <span className="text-xs md:text-sm">Dashboard</span>
+                    <span className="text-xs md:text-sm font-medium">Dashboard</span>
                   </button>
-                  <h1 className="text-sm md:text-base font-bold text-navy-900">Products</h1>
+                  <span className="h-5 w-px bg-charcoal-200" />
+                  <h1 className="text-sm md:text-base font-bold tracking-tight" style={{ color: ACCENT }}>Products</h1>
+                  <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border" style={{ backgroundColor: CREAM, color: ACCENT, borderColor: '#C2D4EA' }}>
+                    {products.length}
+                  </span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={handleRefresh}
                     disabled={isRefreshing}
-                    className="bg-navy-900 hover:bg-navy-800 text-white px-2 py-1 rounded-md font-medium text-xs shadow-sm hover:shadow transition-all flex items-center gap-1 disabled:opacity-50 border border-navy-900/20"
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-full font-semibold text-xs text-charcoal-700 bg-white border border-charcoal-200 hover:border-brand-400 hover:text-brand-600 transition-all disabled:opacity-50"
                     title="Refresh data"
                   >
                     <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
@@ -792,16 +1061,19 @@ const AdminDashboard: React.FC = () => {
                     <button
                       onClick={handleBulkDelete}
                       disabled={isProcessing}
-                      className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white px-2 md:px-3 py-1 rounded-md font-medium text-xs shadow-sm hover:shadow transition-all flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-full font-semibold text-xs text-white bg-red-600 hover:bg-red-700 transition-all disabled:opacity-50"
                     >
                       <Trash2 className="h-3 w-3" />
                       <span className="hidden sm:inline">Delete ({selectedProducts.size})</span>
-                      <span className="sm:hidden">Delete</span>
+                      <span className="sm:hidden">{selectedProducts.size}</span>
                     </button>
                   )}
                   <button
                     onClick={handleAddProduct}
-                    className="bg-theme-accent hover:bg-theme-accent/90 text-white px-2 md:px-3 py-1 rounded-md font-medium text-xs shadow-sm hover:shadow transition-all flex items-center gap-1"
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-full font-semibold text-xs text-white transition-all"
+                    style={{ backgroundColor: ACCENT, boxShadow: '0 2px 8px rgba(60, 108, 168, 0.25)' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = ACCENT_DARK; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ACCENT; }}
                   >
                     <Plus className="h-3 w-3" />
                     <span className="hidden sm:inline">Add New</span>
@@ -812,18 +1084,20 @@ const AdminDashboard: React.FC = () => {
             </div>
           </div>
 
-          <div className="max-w-6xl mx-auto px-3 sm:px-4 py-3 md:py-4">
+          <div className="max-w-6xl mx-auto px-3 sm:px-5 py-4 md:py-6">
             {/* Selection Info Banner */}
             {selectedProducts.size > 0 && (
-              <div className="mb-3 bg-gray-50 border border-gray-200 rounded-lg p-2 md:p-3 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs md:text-sm font-semibold text-gray-900">
-                    {selectedProducts.size} product{selectedProducts.size !== 1 ? 's' : ''} selected
-                  </span>
-                </div>
+              <div
+                className="mb-4 rounded-xl p-3 flex items-center justify-between border"
+                style={{ backgroundColor: '#F2F6FB', borderColor: '#C2D4EA' }}
+              >
+                <span className="text-xs md:text-sm font-semibold" style={{ color: ACCENT_DARK }}>
+                  {selectedProducts.size} product{selectedProducts.size !== 1 ? 's' : ''} selected
+                </span>
                 <button
                   onClick={() => setSelectedProducts(new Set())}
-                  className="text-xs text-theme-accent hover:text-gold-700 font-medium underline"
+                  className="text-xs font-semibold underline hover:no-underline"
+                  style={{ color: ACCENT }}
                 >
                   Clear Selection
                 </button>
@@ -832,211 +1106,265 @@ const AdminDashboard: React.FC = () => {
 
             {/* Mobile Card View */}
             <div className="md:hidden space-y-3">
-              {products.map((product) => (
-                <div key={product.id} className="bg-white rounded-xl shadow-lg border border-gray-200 p-3">
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <div className="flex items-start gap-2 flex-1 min-w-0">
-                      <input
-                        type="checkbox"
-                        checked={selectedProducts.has(product.id)}
-                        onChange={() => toggleSelectProduct(product.id)}
-                        className="mt-0.5 w-4 h-4 text-theme-accent rounded focus:ring-theme-accent cursor-pointer shrink-0"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-sm font-bold text-gray-900 truncate">{product.name}</h3>
-                        <p className="text-xs text-gray-500 line-clamp-2">{product.description}</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-1 shrink-0">
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          console.log('🟣 Layers button clicked (mobile) for:', product.name);
-                          setManagingVariationsProductId(product.id);
-                        }}
-                        disabled={isProcessing}
-                        className={`p - 1.5 rounded - lg transition - all disabled: opacity - 50 disabled: cursor - not - allowed ${product.variations && product.variations.length > 0
-                          ? 'bg-gold-500 text-black hover:bg-gold-600 shadow-md cursor-pointer'
-                          : 'text-theme-accent hover:bg-gray-100 cursor-pointer'
-                          } `}
-                        title="Manage Sizes - Click to edit prices!"
-                      >
-                        <Layers className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => handleEditProduct(product)}
-                        disabled={isProcessing}
-                        className="p-1.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteProduct(product.id)}
-                        disabled={isProcessing}
-                        className="p-1.5 text-red-600 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-                    <div className="flex items-center gap-3">
-                      <div>
-                        <div className="text-[10px] text-gray-500">Price</div>
-                        <div className="text-sm font-bold text-gray-900">
-                          ₱{product.base_price.toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              {products.map((product) => {
+                const isSelected = selectedProducts.has(product.id);
+                const hasSizes = !!(product.variations && product.variations.length > 0);
+                return (
+                  <div
+                    key={product.id}
+                    className="bg-white rounded-2xl border p-3 transition-all"
+                    style={{
+                      borderColor: isSelected ? ACCENT : '#EFEFEF',
+                      boxShadow: isSelected ? '0 4px 14px rgba(60, 108, 168, 0.10)' : '0 1px 3px rgba(20, 35, 60, 0.04)',
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <div className="flex items-start gap-2 flex-1 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelectProduct(product.id)}
+                          className="mt-1 w-4 h-4 rounded cursor-pointer shrink-0"
+                          style={{ accentColor: ACCENT }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-sm font-bold text-charcoal-900 truncate">{product.name}</h3>
+                          <p className="text-[11px] text-charcoal-500 line-clamp-2 mt-0.5">{product.description}</p>
                         </div>
                       </div>
-                      <div>
-                        <div className="text-[10px] text-gray-500">Stock</div>
-                        <div className="text-sm font-semibold text-gray-900">{product.stock_quantity}</div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-gray-500">Sizes</div>
-                        <div className="text-sm font-semibold text-theme-accent">{product.variations?.length || 0}</div>
+                      <div className="flex gap-1 shrink-0">
+                        <button
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setManagingVariationsProductId(product.id); }}
+                          disabled={isProcessing}
+                          className="p-1.5 rounded-lg transition-all disabled:opacity-50"
+                          style={hasSizes
+                            ? { backgroundColor: ACCENT, color: '#FFFFFF' }
+                            : { backgroundColor: CREAM, color: ACCENT, border: '1px solid #C2D4EA' }}
+                          title="Manage Sizes"
+                        >
+                          <Layers className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleEditProduct(product)}
+                          disabled={isProcessing}
+                          className="p-1.5 text-charcoal-700 hover:bg-cream-100 rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteProduct(product.id)}
+                          disabled={isProcessing}
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      {product.featured && (
-                        <span className="text-xs">⭐</span>
-                      )}
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${product.available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                        }`}>
-                        {product.available ? '✅' : '❌'}
-                      </span>
+                    <div className="flex items-center justify-between pt-3 border-t border-charcoal-100">
+                      <div className="grid grid-cols-3 gap-3 flex-1">
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wider text-charcoal-400 font-semibold">Price</div>
+                          <div className="text-sm font-bold text-charcoal-900 mt-0.5">
+                            ₱{product.base_price.toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wider text-charcoal-400 font-semibold">Stock</div>
+                          <div className="text-sm font-semibold text-charcoal-900 mt-0.5">{product.stock_quantity}</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wider text-charcoal-400 font-semibold">Sizes</div>
+                          <div className="text-sm font-semibold mt-0.5" style={{ color: ACCENT }}>{product.variations?.length || 0}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 ml-2">
+                        {product.featured && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold" style={{ backgroundColor: CREAM, color: ACCENT, border: '1px solid #C2D4EA' }}>★</span>
+                        )}
+                        <span
+                          className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border"
+                          style={product.available
+                            ? { backgroundColor: '#ECFDF5', color: '#047857', borderColor: '#A7F3D0' }
+                            : { backgroundColor: '#FEF2F2', color: '#B91C1C', borderColor: '#FECACA' }}
+                        >
+                          {product.available ? 'Active' : 'Off'}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Desktop Table View */}
-            <div className="hidden md:block bg-white rounded-lg md:rounded-xl shadow-lg overflow-hidden border border-gray-200">
+            <div className="hidden md:block bg-white rounded-2xl overflow-hidden border border-charcoal-100 shadow-soft">
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-200">
+                  <thead style={{ backgroundColor: CREAM, borderBottom: '1px solid #EFEFEF' }}>
                     <tr>
-                      <th className="px-3 py-2 text-center w-10">
+                      <th className="px-3 py-3 text-center w-10">
                         <input
                           type="checkbox"
                           checked={selectedProducts.size === products.length && products.length > 0}
                           onChange={toggleSelectAll}
-                          className="w-4 h-4 text-theme-accent rounded focus:ring-theme-accent cursor-pointer"
+                          className="w-4 h-4 rounded cursor-pointer"
+                          style={{ accentColor: ACCENT }}
                           title="Select All"
                         />
                       </th>
-                      <th className="px-4 py-2 text-left text-xs font-bold text-gray-800">Product</th>
-                      <th className="px-4 py-2 text-left text-xs font-bold text-gray-800 hidden lg:table-cell">Category</th>
-                      <th className="px-4 py-2 text-left text-xs font-bold text-gray-800">Price</th>
-                      <th className="px-4 py-2 text-left text-xs font-bold text-gray-800">Sizes</th>
-                      <th className="px-4 py-2 text-left text-xs font-bold text-gray-800">Purity</th>
-                      <th className="px-4 py-2 text-left text-xs font-bold text-gray-800">Stock</th>
-                      <th className="px-4 py-2 text-left text-xs font-bold text-gray-800 hidden xl:table-cell">Status</th>
-                      <th className="px-4 py-2 text-left text-xs font-bold text-gray-800">Actions</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.12em] text-charcoal-500">Product</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.12em] text-charcoal-500 hidden lg:table-cell">Category</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.12em] text-charcoal-500">Price</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.12em] text-charcoal-500">Sizes</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.12em] text-charcoal-500">Purity</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.12em] text-charcoal-500">Stock</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.12em] text-charcoal-500 hidden xl:table-cell">Status</th>
+                      <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-[0.12em] text-charcoal-500">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {products.map((product) => (
-                      <tr key={product.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-3 py-2 text-center">
-                          <input
-                            type="checkbox"
-                            checked={selectedProducts.has(product.id)}
-                            onChange={() => toggleSelectProduct(product.id)}
-                            className="w-4 h-4 text-theme-accent rounded focus:ring-theme-accent cursor-pointer"
-                          />
-                        </td>
-                        <td className="px-4 py-2">
-                          <div className="text-xs font-semibold text-gray-900">{product.name}</div>
-                          <div className="text-[10px] text-gray-500 truncate max-w-xs">{product.description}</div>
-                        </td>
-                        <td className="px-4 py-2 text-xs text-gray-600 hidden lg:table-cell">
-                          {categories.find(cat => cat.id === product.category)?.name}
-                        </td>
-                        <td className="px-4 py-2 text-xs font-bold text-gray-900">
-                          ₱{product.base_price.toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                          {product.variations && product.variations.length > 0 && (
-                            <div className="text-[9px] text-theme-accent font-medium mt-0.5">
-                              Not used (has sizes)
+                  <tbody className="divide-y divide-charcoal-100">
+                    {products.map((product) => {
+                      const isSelected = selectedProducts.has(product.id);
+                      const hasSizes = !!(product.variations && product.variations.length > 0);
+                      return (
+                        <tr
+                          key={product.id}
+                          className="transition-colors"
+                          style={isSelected ? { backgroundColor: '#F2F6FB' } : undefined}
+                          onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = '#FBF6EA'; }}
+                          onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = ''; }}
+                        >
+                          <td className="px-3 py-3 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleSelectProduct(product.id)}
+                              className="w-4 h-4 rounded cursor-pointer"
+                              style={{ accentColor: ACCENT }}
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="text-sm font-semibold text-charcoal-900">{product.name}</div>
+                            <div className="text-[11px] text-charcoal-500 truncate max-w-xs mt-0.5">{product.description}</div>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-charcoal-600 hidden lg:table-cell">
+                            {categories.find(cat => cat.id === product.category)?.name || '—'}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="text-sm font-bold text-charcoal-900">
+                              ₱{product.base_price.toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                             </div>
-                          )}
-                        </td>
-                        <td className="px-4 py-2">
-                          {product.variations && product.variations.length > 0 ? (
-                            <div>
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-theme-accent">
-                                {product.variations.length} {product.variations.length === 1 ? 'size' : 'sizes'}
-                              </span>
-                              <div className="text-[9px] text-gray-500 mt-0.5">
-                                Click <Layers className="w-2.5 h-2.5 inline text-theme-accent" /> to edit
+                            {hasSizes && (
+                              <div className="text-[9px] font-medium mt-0.5" style={{ color: ACCENT }}>
+                                Per-size pricing
                               </div>
-                            </div>
-                          ) : (
-                            <span className="text-[10px] text-gray-400">No sizes</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-700">
-                            {product.purity_percentage}%
-                          </span>
-                        </td>
-                        <td className="px-4 py-2 text-xs font-medium text-gray-900">
-                          {product.stock_quantity}
-                        </td>
-                        <td className="px-4 py-2 hidden xl:table-cell">
-                          <div className="flex flex-col gap-0.5">
-                            {product.featured && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-theme-accent">
-                                ⭐ Featured
-                              </span>
                             )}
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${product.available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                              }`}>
-                              {product.available ? '✅' : '❌'}
+                          </td>
+                          <td className="px-4 py-3">
+                            {hasSizes ? (
+                              <span
+                                className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border"
+                                style={{ backgroundColor: CREAM, color: ACCENT, borderColor: '#C2D4EA' }}
+                              >
+                                {product.variations!.length} {product.variations!.length === 1 ? 'size' : 'sizes'}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-charcoal-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-charcoal-50 text-charcoal-700 border border-charcoal-100">
+                              {product.purity_percentage}%
                             </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-2">
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                console.log('🟣 Layers button clicked for:', product.name);
-                                setManagingVariationsProductId(product.id);
-                              }}
-                              disabled={isProcessing}
-                              className={`p-1.5 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${product.variations && product.variations.length > 0
-                                ? 'bg-gold-500 text-black hover:bg-gold-600 shadow-md hover:shadow-lg cursor-pointer'
-                                : 'text-theme-accent hover:bg-gray-100 cursor-pointer'
-                                } `}
-                              title="Manage Sizes - Click here to edit prices!"
-                            >
-                              <Layers className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleEditProduct(product)}
-                              disabled={isProcessing}
-                              className="p-1.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                            >
-                              <Edit className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteProduct(product.id)}
-                              disabled={isProcessing}
-                              className="p-1.5 text-red-600 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="px-4 py-3 text-xs font-semibold text-charcoal-900">
+                            {product.stock_quantity}
+                          </td>
+                          <td className="px-4 py-3 hidden xl:table-cell">
+                            <div className="flex flex-col gap-1">
+                              {product.featured && (
+                                <span
+                                  className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold border w-fit"
+                                  style={{ backgroundColor: CREAM, color: ACCENT, borderColor: '#C2D4EA' }}
+                                >
+                                  ★ Featured
+                                </span>
+                              )}
+                              <span
+                                className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border w-fit"
+                                style={product.available
+                                  ? { backgroundColor: '#ECFDF5', color: '#047857', borderColor: '#A7F3D0' }
+                                  : { backgroundColor: '#FEF2F2', color: '#B91C1C', borderColor: '#FECACA' }}
+                              >
+                                {product.available ? 'Active' : 'Off'}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setManagingVariationsProductId(product.id); }}
+                                disabled={isProcessing}
+                                className="p-1.5 rounded-lg transition-all disabled:opacity-50"
+                                style={hasSizes
+                                  ? { backgroundColor: ACCENT, color: '#FFFFFF' }
+                                  : { color: ACCENT, backgroundColor: 'transparent' }}
+                                onMouseEnter={(e) => {
+                                  if (hasSizes) e.currentTarget.style.backgroundColor = ACCENT_DARK;
+                                  else e.currentTarget.style.backgroundColor = CREAM;
+                                }}
+                                onMouseLeave={(e) => {
+                                  if (hasSizes) e.currentTarget.style.backgroundColor = ACCENT;
+                                  else e.currentTarget.style.backgroundColor = 'transparent';
+                                }}
+                                title="Manage Sizes"
+                              >
+                                <Layers className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleEditProduct(product)}
+                                disabled={isProcessing}
+                                className="p-1.5 text-charcoal-700 hover:bg-cream-100 rounded-lg transition-colors disabled:opacity-50"
+                                title="Edit"
+                              >
+                                <Edit className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteProduct(product.id)}
+                                disabled={isProcessing}
+                                className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                                title="Delete"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             </div>
+
+            {products.length === 0 && (
+              <div className="bg-white rounded-2xl border border-charcoal-100 shadow-soft p-12 text-center mt-4">
+                <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center" style={{ backgroundColor: CREAM }}>
+                  <Plus className="w-7 h-7" style={{ color: ACCENT }} />
+                </div>
+                <h3 className="text-base font-bold text-charcoal-900 mb-1">No products yet</h3>
+                <p className="text-sm text-charcoal-500 mb-4">Add your first product to get started.</p>
+                <button
+                  onClick={handleAddProduct}
+                  className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full text-white text-sm font-semibold transition-all"
+                  style={{ backgroundColor: ACCENT }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = ACCENT_DARK; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ACCENT; }}
+                >
+                  <Plus className="h-4 w-4" /> Add Product
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </>
@@ -1086,7 +1414,7 @@ const AdminDashboard: React.FC = () => {
         <div className="max-w-4xl mx-auto">
           <button
             onClick={() => setCurrentView('dashboard')}
-            className="mb-4 text-gray-600 hover:text-navy-900 flex items-center gap-2"
+            className="mb-4 text-gray-600 hover:text-brand-600 flex items-center gap-2"
           >
             <ArrowLeft className="w-4 h-4" />
             Back to Dashboard
@@ -1104,7 +1432,7 @@ const AdminDashboard: React.FC = () => {
         <div className="max-w-4xl mx-auto">
           <button
             onClick={() => setCurrentView('dashboard')}
-            className="mb-4 text-gray-600 hover:text-navy-900 flex items-center gap-2"
+            className="mb-4 text-gray-600 hover:text-brand-600 flex items-center gap-2"
           >
             <ArrowLeft className="w-4 h-4" />
             Back to Dashboard
@@ -1149,7 +1477,7 @@ const AdminDashboard: React.FC = () => {
         <div className="max-w-4xl mx-auto">
           <button
             onClick={() => setCurrentView('dashboard')}
-            className="mb-4 text-gray-600 hover:text-navy-900 flex items-center gap-2"
+            className="mb-4 text-gray-600 hover:text-brand-600 flex items-center gap-2"
           >
             <ArrowLeft className="w-4 h-4" />
             Back to Dashboard
@@ -1164,12 +1492,12 @@ const AdminDashboard: React.FC = () => {
   return (
     <>
       {variationManagerModal}
-      <div className="min-h-screen bg-gray-50">
-        <div className="bg-white shadow-md border-b-4 border-navy-900">
+      <div className="min-h-screen" style={{ background: 'linear-gradient(180deg, #FFFFFF 0%, #FFFCF6 100%)' }}>
+        <div className="bg-white shadow-soft border-b border-charcoal-100">
           <div className="max-w-6xl mx-auto px-4">
             <div className="flex items-center justify-between h-14">
               <div className="flex items-center space-x-3">
-                <div className="w-9 h-9 rounded-full overflow-hidden border border-navy-900/20">
+                <div className="w-9 h-9 rounded-full overflow-hidden border border-charcoal-100">
                   <img
                     src="/assets/logo.jpeg"
                     alt="SlimDose Peptides"
@@ -1177,10 +1505,10 @@ const AdminDashboard: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <h1 className="text-base font-bold text-theme-text">
+                  <h1 className="text-base font-bold text-charcoal-900">
                     SlimDose Peptides
                   </h1>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-charcoal-500">
                     Admin Dashboard
                   </p>
                 </div>
@@ -1190,13 +1518,13 @@ const AdminDashboard: React.FC = () => {
                   href="/"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-gray-600 hover:text-theme-accent transition-colors font-medium text-sm hidden sm:block"
+                  className="text-charcoal-600 hover:text-brand-600 transition-colors font-medium text-sm hidden sm:block"
                 >
                   View Website
                 </a>
                 <button
                   onClick={handleLogout}
-                  className="bg-navy-900 hover:bg-navy-800 text-white px-4 py-2 rounded-lg transition-colors font-medium text-sm shadow-sm"
+                  className="bg-brand-500 hover:bg-brand-600 text-white px-4 py-2 rounded-full transition-colors font-medium text-sm shadow-sm"
                 >
                   Logout
                 </button>
@@ -1209,7 +1537,7 @@ const AdminDashboard: React.FC = () => {
 
           {/* Inventory Stats */}
           <div className="mb-6">
-            <h2 className="text-xl font-bold text-navy-900 flex items-center gap-2 mb-4">
+            <h2 className="text-xl font-bold flex items-center gap-2 mb-4" style={{ color: '#3C6CA8' }}>
               <Calendar className="w-5 h-5" />
               Inventory Overview
             </h2>
@@ -1249,12 +1577,12 @@ const AdminDashboard: React.FC = () => {
                 className="bg-white rounded-xl shadow-soft hover:shadow-md transition-all p-4 border border-gray-100 text-left cursor-pointer"
               >
                 <div className="flex items-center">
-                  <div className="p-2 bg-theme-secondary/10 rounded-lg">
-                    <Sparkles className="h-4 w-4 text-theme-secondary" />
+                  <div className="p-2 bg-amber-50 rounded-lg">
+                    <Sparkles className="h-4 w-4 text-amber-600" />
                   </div>
                   <div className="ml-3">
-                    <p className="text-xs font-medium text-gray-500">Featured</p>
-                    <p className="text-xl font-bold text-theme-secondary">{featuredProducts}</p>
+                    <p className="text-xs font-medium text-charcoal-500">Featured</p>
+                    <p className="text-xl font-bold text-amber-600">{featuredProducts}</p>
                   </div>
                 </div>
               </button>
@@ -1288,18 +1616,18 @@ const AdminDashboard: React.FC = () => {
                   className="w-full flex items-center gap-3 p-2 text-left hover:bg-gray-50 rounded-lg transition-all"
                 >
                   <div className="p-1.5 bg-navy-50 rounded-lg">
-                    <Plus className="h-4 w-4 text-navy-900" />
+                    <Plus className="h-4 w-4 text-brand-500" />
                   </div>
-                  <span className="text-sm font-medium text-navy-900">Add New Product</span>
+                  <span className="text-sm font-medium text-brand-500">Add New Product</span>
                 </button>
                 <button
                   onClick={() => setCurrentView('products')}
                   className="w-full flex items-center gap-3 p-2 text-left hover:bg-gray-50 rounded-lg transition-all"
                 >
                   <div className="p-1.5 bg-navy-50 rounded-lg">
-                    <Package className="h-4 w-4 text-navy-900" />
+                    <Package className="h-4 w-4 text-brand-500" />
                   </div>
-                  <span className="text-sm font-medium text-navy-900">Manage Products</span>
+                  <span className="text-sm font-medium text-brand-500">Manage Products</span>
                 </button>
                 <button
                   onClick={() => setCurrentView('categories')}
@@ -1333,9 +1661,9 @@ const AdminDashboard: React.FC = () => {
                   className="w-full flex items-center gap-3 p-2 text-left hover:bg-gray-50 rounded-lg transition-all"
                 >
                   <div className="p-1.5 bg-navy-50 rounded-lg">
-                    <ShoppingCart className="h-4 w-4 text-navy-900" />
+                    <ShoppingCart className="h-4 w-4 text-brand-500" />
                   </div>
-                  <span className="text-sm font-medium text-navy-900">Orders Management</span>
+                  <span className="text-sm font-medium text-brand-500">Orders Management</span>
                 </button>
                 <button
                   onClick={() => setCurrentView('analytics')}
@@ -1360,18 +1688,18 @@ const AdminDashboard: React.FC = () => {
                   className="w-full flex items-center gap-3 p-2 text-left hover:bg-gray-50 rounded-lg transition-all"
                 >
                   <div className="p-1.5 bg-navy-50 rounded-lg">
-                    <Shield className="h-4 w-4 text-navy-900" />
+                    <Shield className="h-4 w-4 text-brand-500" />
                   </div>
-                  <span className="text-sm font-medium text-navy-900">Lab Results (COA)</span>
+                  <span className="text-sm font-medium text-brand-500">Lab Results (COA)</span>
                 </button>
                 <button
                   onClick={() => setCurrentView('faq')}
                   className="w-full flex items-center gap-3 p-2 text-left hover:bg-gray-50 rounded-lg transition-all"
                 >
                   <div className="p-1.5 bg-navy-50 rounded-lg">
-                    <HelpCircle className="h-4 w-4 text-navy-900" />
+                    <HelpCircle className="h-4 w-4 text-brand-500" />
                   </div>
-                  <span className="text-sm font-medium text-navy-900">Manage FAQ</span>
+                  <span className="text-sm font-medium text-brand-500">Manage FAQ</span>
                 </button>
                 <button
                   onClick={() => setCurrentView('promo-codes')}

@@ -1,19 +1,42 @@
-import React, { useState } from 'react';
-import { ArrowLeft, ShieldCheck, Package, CreditCard, Sparkles, Heart, Copy, Check, MessageCircle, Tag, XCircle, CheckCircle, Upload, X, FileImage, Loader2 } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, ShieldCheck, Package, CreditCard, Sparkles, Heart, Copy, Check, MessageCircle, Tag, XCircle, CheckCircle, Upload, X, FileImage, Loader2, Info, Wallet } from 'lucide-react';
+
+const PAYMONGO_METHOD_ID = 'paymongo';
 import type { CartItem } from '../types';
 import { usePaymentMethods } from '../hooks/usePaymentMethods';
 import { useShippingLocations } from '../hooks/useShippingLocations';
 import { supabase } from '../lib/supabase';
 import { useImageUpload } from '../hooks/useImageUpload';
 import { mirrorOrderCreate, mirrorPromoIncrementUsage } from '../lib/convexMirror';
+import { useBundleTiers } from '../hooks/useBundleTiers';
+import { useGlobalDiscount } from '../hooks/useGlobalDiscount';
+import { computeCartPricing } from '../utils/pricing';
 
 interface CheckoutProps {
   cartItems: CartItem[];
   totalPrice: number;
+  refreshCartPrices: () => Promise<boolean>;
+  pricesUpdatedAt: number | null;
+  dismissPriceUpdateNotice: () => void;
   onBack: () => void;
 }
 
-const Checkout: React.FC<CheckoutProps> = ({ cartItems, totalPrice, onBack }) => {
+const Checkout: React.FC<CheckoutProps> = ({ cartItems, refreshCartPrices, pricesUpdatedAt, dismissPriceUpdateNotice, onBack }) => {
+  const productIds = useMemo(() => cartItems.map((i) => i.product.id), [cartItems]);
+  const { tiersByProduct } = useBundleTiers(productIds);
+  const { globalDiscount } = useGlobalDiscount();
+  const pricing = useMemo(
+    () => computeCartPricing(cartItems, tiersByProduct, globalDiscount),
+    [cartItems, tiersByProduct, globalDiscount]
+  );
+  const totalPrice = pricing.subtotal; // bundle-adjusted subtotal
+  const bundleSavings = pricing.bundleSavings;
+  const hasBundleDiscount = pricing.hasBundleDiscount;
+
+  useEffect(() => {
+    refreshCartPrices();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const { paymentMethods } = usePaymentMethods();
   const { locations: shippingLocations, getShippingFee } = useShippingLocations();
   const [step, setStep] = useState<'details' | 'payment' | 'confirmation'>('details');
@@ -57,10 +80,10 @@ const Checkout: React.FC<CheckoutProps> = ({ cartItems, totalPrice, onBack }) =>
   }, [step]);
 
   React.useEffect(() => {
-    if (paymentMethods.length > 0 && !selectedPaymentMethod) {
-      setSelectedPaymentMethod(paymentMethods[0].id);
+    if (!selectedPaymentMethod) {
+      setSelectedPaymentMethod(PAYMONGO_METHOD_ID);
     }
-  }, [paymentMethods, selectedPaymentMethod]);
+  }, [selectedPaymentMethod]);
 
   // Calculate shipping fee based on location (uses dynamic fees from database)
   const shippingFee = shippingLocation ? getShippingFee(shippingLocation) : 0;
@@ -68,12 +91,28 @@ const Checkout: React.FC<CheckoutProps> = ({ cartItems, totalPrice, onBack }) =>
   // Calculate final total (Subtotal + Shipping - Discount)
   const finalTotal = Math.max(0, totalPrice + shippingFee - discountAmount);
 
+  // Auto-clear promo if a bundle discount becomes active
+  useEffect(() => {
+    if (hasBundleDiscount && appliedPromo) {
+      setAppliedPromo(null);
+      setDiscountAmount(0);
+      setPromoCode('');
+      setPromoSuccess('');
+      setPromoError('Bundle discount is active — promo codes can\'t be combined.');
+    }
+  }, [hasBundleDiscount, appliedPromo]);
+
   // Handle Promo Code Application
   const handleApplyPromoCode = async () => {
     setPromoError('');
     setPromoSuccess('');
     setAppliedPromo(null);
     setDiscountAmount(0);
+
+    if (hasBundleDiscount) {
+      setPromoError('Bundle discount is active — promo codes can\'t be combined.');
+      return;
+    }
 
     const code = promoCode.trim().toUpperCase();
     if (!code) {
@@ -169,18 +208,21 @@ const Checkout: React.FC<CheckoutProps> = ({ cartItems, totalPrice, onBack }) =>
   };
 
 
-  const handlePlaceOrder = async () => {
-    if (!contactMethod) {
-      alert('Please select your preferred contact method (Telegram).');
-      return;
-    }
+  const isPaymongoSelected = selectedPaymentMethod === PAYMONGO_METHOD_ID;
+  const [isCreatingPaymongoCheckout, setIsCreatingPaymongoCheckout] = useState(false);
 
+  const handlePlaceOrder = async () => {
     if (!shippingLocation) {
       alert('Please select your shipping location.');
       return;
     }
 
-    if (!paymentProof) {
+    if (!isPaymongoSelected && !contactMethod) {
+      alert('Please select your preferred contact method (Telegram).');
+      return;
+    }
+
+    if (!isPaymongoSelected && !paymentProof) {
       alert('Please upload a screenshot of your payment proof to proceed.');
       return;
     }
@@ -188,9 +230,9 @@ const Checkout: React.FC<CheckoutProps> = ({ cartItems, totalPrice, onBack }) =>
     const paymentMethod = paymentMethods.find(pm => pm.id === selectedPaymentMethod);
 
     try {
-      // 1. Upload Payment Proof First
+      // 1. Upload Payment Proof First (manual methods only)
       let paymentProofUrl = null;
-      if (paymentProof) {
+      if (!isPaymongoSelected && paymentProof) {
         try {
           paymentProofUrl = await uploadImage(paymentProof);
         } catch (uploadError: any) {
@@ -200,17 +242,22 @@ const Checkout: React.FC<CheckoutProps> = ({ cartItems, totalPrice, onBack }) =>
         }
       }
 
-      // Prepare order items for database
-      const orderItems = cartItems.map(item => ({
-        product_id: item.product.id,
-        product_name: item.product.name,
-        variation_id: item.variation?.id || null,
-        variation_name: item.variation?.name || null,
-        quantity: item.quantity,
-        price: item.price,
-        total: item.price * item.quantity,
-        purity_percentage: item.product.purity_percentage
-      }));
+      // Prepare order items for database (use bundle-adjusted unit price)
+      const orderItems = cartItems.map((item, idx) => {
+        const line = pricing.lines[idx];
+        const unit = line ? line.unitFinalPrice : item.price;
+        return {
+          product_id: item.product.id,
+          product_name: item.product.name,
+          variation_id: item.variation?.id || null,
+          variation_name: item.variation?.name || null,
+          quantity: item.quantity,
+          price: unit,
+          total: unit * item.quantity,
+          bundle_discount_percent: line?.bundlePercent ?? 0,
+          purity_percentage: item.product.purity_percentage,
+        };
+      });
 
       // Save order to database
       const { data: orderData, error: orderError } = await supabase
@@ -228,16 +275,16 @@ const Checkout: React.FC<CheckoutProps> = ({ cartItems, totalPrice, onBack }) =>
           total_price: Math.max(0, totalPrice - discountAmount), // Store subtotal minus discount (not including shipping)
           shipping_fee: shippingFee,
           shipping_location: shippingLocation,
-          payment_method_id: paymentMethod?.id || null,
-          payment_method_name: paymentMethod?.name || null,
+          payment_method_id: isPaymongoSelected ? null : (paymentMethod?.id || null),
+          payment_method_name: isPaymongoSelected ? 'PayMongo' : (paymentMethod?.name || null),
           payment_proof_url: paymentProofUrl,
-          contact_method: contactMethod || null,
+          contact_method: isPaymongoSelected ? 'paymongo' : (contactMethod || null),
           notes: notes.trim() || null,
           order_status: 'new',
           payment_status: 'pending',
           promo_code_id: appliedPromo?.id || null,
           promo_code: appliedPromo?.code || null,
-          discount_applied: discountAmount
+          discount_applied: discountAmount + bundleSavings
         }])
         .select()
         .single();
@@ -277,7 +324,7 @@ const Checkout: React.FC<CheckoutProps> = ({ cartItems, totalPrice, onBack }) =>
         payment_proof_url: paymentProofUrl,
         promo_code_id: appliedPromo?.id ?? null,
         promo_code: appliedPromo?.code ?? null,
-        discount_applied: discountAmount,
+        discount_applied: discountAmount + bundleSavings,
         notes: notes.trim() || undefined,
       });
 
@@ -296,6 +343,39 @@ const Checkout: React.FC<CheckoutProps> = ({ cartItems, totalPrice, onBack }) =>
       }
 
       console.log('✅ Order saved to database:', orderData);
+
+      // PayMongo path: create checkout session and redirect to hosted page.
+      if (isPaymongoSelected) {
+        try {
+          setIsCreatingPaymongoCheckout(true);
+          const origin = window.location.origin;
+          const successUrl = `${origin}/?paymongo=success&order_id=${orderData.id}`;
+          const cancelUrl = `${origin}/?paymongo=cancel&order_id=${orderData.id}`;
+          const { data: pmRes, error: pmErr } = await supabase.functions.invoke(
+            'paymongo-create-checkout',
+            { body: { order_id: orderData.id, success_url: successUrl, cancel_url: cancelUrl } }
+          );
+          if (pmErr) {
+            console.error('PayMongo invoke error:', pmErr);
+            alert(`Failed to start PayMongo checkout: ${(pmErr as any)?.message || 'transport error'}`);
+            setIsCreatingPaymongoCheckout(false);
+            return;
+          }
+          if (!pmRes?.ok || !pmRes?.checkout_url) {
+            console.error('PayMongo function returned error:', pmRes);
+            alert(`Failed to start PayMongo checkout: ${pmRes?.error || 'Unknown error'}`);
+            setIsCreatingPaymongoCheckout(false);
+            return;
+          }
+          window.location.href = pmRes.checkout_url;
+          return;
+        } catch (e: any) {
+          console.error('PayMongo redirect failed:', e);
+          alert(`Failed to start PayMongo checkout: ${e?.message || 'Unknown error'}`);
+          setIsCreatingPaymongoCheckout(false);
+          return;
+        }
+      }
 
       // Fire-and-forget Telegram notification to admin group
       supabase.functions
@@ -332,12 +412,17 @@ ${barangay}
 ${city}, ${state} ${zipCode}
 
 🛒 ORDER DETAILS
-${cartItems.map(item => {
+${cartItems.map((item, idx) => {
+        const linePrice = pricing.lines[idx];
+        const unit = linePrice ? linePrice.unitFinalPrice : item.price;
         let line = `• ${item.product.name}`;
         if (item.variation) {
           line += ` (${item.variation.name})`;
         }
-        line += ` x${item.quantity} - ₱${(item.price * item.quantity).toLocaleString('en-PH', { minimumFractionDigits: 0 })}`;
+        line += ` x${item.quantity} - ₱${(unit * item.quantity).toLocaleString('en-PH', { minimumFractionDigits: 0 })}`;
+        if (linePrice?.bundlePercent) {
+          line += ` (Bundle ${linePrice.bundlePercent}% OFF)`;
+        }
         if (item.product.purity_percentage && item.product.purity_percentage > 0) {
           line += `\n  Purity: ${item.product.purity_percentage}%`;
         }
@@ -345,8 +430,8 @@ ${cartItems.map(item => {
       }).join('\n\n')}
 
 💰 PRICING
-Product Total: ₱${totalPrice.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
-Shipping Fee: ₱${shippingFee.toLocaleString('en-PH', { minimumFractionDigits: 0 })} (${shippingLocation.replace('_', ' & ')})
+Product Total: ₱${pricing.subtotalBeforeBundle.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
+${bundleSavings > 0 ? `Bundle Discount: -₱${bundleSavings.toLocaleString('en-PH', { minimumFractionDigits: 0 })}\n` : ''}Shipping Fee: ₱${shippingFee.toLocaleString('en-PH', { minimumFractionDigits: 0 })} (${shippingLocation.replace('_', ' & ')})
 ${discountAmount > 0 ? `Discount (${appliedPromo?.code}): -₱${discountAmount.toLocaleString('en-PH', { minimumFractionDigits: 0 })}\n` : ''}Grand Total: ₱${finalTotal.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
 
 💳 PAYMENT METHOD
@@ -359,7 +444,7 @@ ${paymentProofUrl ? 'Screenshot attached to order.' : 'Pending'}
 📱 CONTACT METHOD
 Telegram: https://t.me/slimdosedvo
 
-📋 ORDER ID: ${orderData.id}
+📋 ORDER ID: ${orderData.order_number || orderData.id}
 
 Please confirm this order. Thank you!
       `.trim();
@@ -563,6 +648,17 @@ Please confirm this order. Thank you!
     return (
       <div className="min-h-screen bg-gradient-to-br from-white via-gray-50 to-white py-6 md:py-8">
         <div className="container mx-auto px-3 md:px-4 max-w-6xl">
+          {pricesUpdatedAt && (
+            <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-800">
+              <Info className="w-5 h-5 mt-0.5 flex-shrink-0" />
+              <div className="flex-1 text-sm font-medium">
+                Prices have been updated to the latest from our store.
+              </div>
+              <button onClick={dismissPriceUpdateNotice} className="p-1 hover:bg-amber-100 rounded">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
           <button
             onClick={onBack}
             className="text-gray-700 hover:text-gold-600 font-medium mb-4 md:mb-6 flex items-center gap-2 transition-colors group"
@@ -758,14 +854,16 @@ Please confirm this order. Thank you!
                 <div className="space-y-4 mb-6">
                   {cartItems.map((item, index) => {
                     // Determine if this item has a product-level discount
+                    const line = pricing.lines[index];
                     const hasVariation = !!item.variation;
                     const originalPrice = hasVariation
                       ? item.variation!.price * item.quantity
                       : item.product.base_price * item.quantity;
-                    const currentPrice = item.price * item.quantity;
-                    const hasProductDiscount = hasVariation
+                    const currentPrice = line ? line.lineSubtotal : item.price * item.quantity;
+                    const hasProductDiscount = (hasVariation
                       ? (item.variation!.discount_active && item.variation!.discount_price !== null)
-                      : (item.product.discount_active && item.product.discount_price !== null);
+                      : (item.product.discount_active && item.product.discount_price !== null))
+                      || (line?.bundlePercent ?? 0) > 0;
                     const savedAmount = originalPrice - currentPrice;
 
                     return (
@@ -811,14 +909,19 @@ Please confirm this order. Thank you!
                       <Tag className="w-3.5 h-3.5 text-gold-600" />
                       Have a promo code?
                     </p>
+                    {hasBundleDiscount && (
+                      <p className="text-xs text-amber-700 mb-2 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                        Bundle discount is active — promo codes can't be combined.
+                      </p>
+                    )}
                     <div className="flex gap-2">
                       <input
                         type="text"
                         value={promoCode}
                         onChange={(e) => setPromoCode(e.target.value)}
                         placeholder="Enter code"
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gold-400 focus:border-transparent outline-none uppercase"
-                        disabled={!!appliedPromo || isApplyingPromo}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gold-400 focus:border-transparent outline-none uppercase disabled:bg-gray-100"
+                        disabled={!!appliedPromo || isApplyingPromo || hasBundleDiscount}
                       />
                       {appliedPromo ? (
                         <button
@@ -835,7 +938,7 @@ Please confirm this order. Thank you!
                       ) : (
                         <button
                           onClick={handleApplyPromoCode}
-                          disabled={!promoCode || isApplyingPromo}
+                          disabled={!promoCode || isApplyingPromo || hasBundleDiscount}
                           className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-medium hover:bg-navy-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
                           {isApplyingPromo ? (
@@ -860,8 +963,32 @@ Please confirm this order. Thank you!
                     )}
                   </div>
 
+                  {hasBundleDiscount && (
+                    <>
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600">Subtotal</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-400 line-through text-sm">
+                            ₱{pricing.subtotalBeforeBundle.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
+                          </span>
+                          <span className="font-semibold text-green-600">
+                            ₱{totalPrice.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center bg-green-50 -mx-6 px-6 py-2 border-y border-green-100">
+                        <span className="flex items-center gap-1.5 text-green-700 font-medium text-sm">
+                          <Tag className="w-4 h-4" />
+                          Bundle discount
+                        </span>
+                        <span className="font-bold text-green-700 text-sm">
+                          -₱{bundleSavings.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
+                        </span>
+                      </div>
+                    </>
+                  )}
                   {/* Subtotal with discount pricing */}
-                  {discountAmount > 0 ? (
+                  {hasBundleDiscount ? null : discountAmount > 0 ? (
                     <>
                       {/* Discounted Subtotal Display */}
                       <div className="flex justify-between items-center">
@@ -934,6 +1061,17 @@ Please confirm this order. Thank you!
   return (
     <div className="min-h-screen bg-gradient-to-br from-white via-gray-50 to-white py-6 md:py-8">
       <div className="container mx-auto px-3 md:px-4 max-w-6xl">
+        {pricesUpdatedAt && (
+          <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-800">
+            <Info className="w-5 h-5 mt-0.5 flex-shrink-0" />
+            <div className="flex-1 text-sm font-medium">
+              Prices have been updated to the latest from our store.
+            </div>
+            <button onClick={dismissPriceUpdateNotice} className="p-1 hover:bg-amber-100 rounded">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
         <button
           onClick={() => setStep('details')}
           className="text-gray-700 hover:text-gold-600 font-medium mb-4 md:mb-6 flex items-center gap-2 transition-colors group"
@@ -992,7 +1130,44 @@ Please confirm this order. Thank you!
                 Payment Method
               </h2>
 
-              <div className="grid grid-cols-1 gap-4 mb-6">
+              <div className="grid grid-cols-1 gap-3 mb-6">
+                {/* PayMongo option (cards / e-wallets) */}
+                <div
+                  className={`rounded-lg border-2 transition-all overflow-hidden ${isPaymongoSelected
+                    ? 'border-navy-900'
+                    : 'border-gray-200 hover:border-navy-700'
+                    }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPaymentMethod(PAYMONGO_METHOD_ID)}
+                    className="w-full p-4 flex items-center justify-between text-left bg-white"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isPaymongoSelected ? 'border-navy-900' : 'border-gray-300'}`}>
+                        {isPaymongoSelected && <div className="w-2.5 h-2.5 rounded-full bg-navy-900" />}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-navy-900 text-sm md:text-base leading-tight">
+                          Credit/Debit Cards and e-Wallets
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">Secure checkout via PayMongo</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <span className="px-2 py-1 rounded bg-white border border-gray-200 text-[10px] font-bold text-gray-700">GCash</span>
+                      <span className="px-2 py-1 rounded bg-white border border-gray-200 text-[10px] font-bold text-gray-700">Maya</span>
+                      <span className="px-2 py-1 rounded bg-white border border-gray-200 text-[10px] font-bold text-gray-700">VISA</span>
+                      <span className="px-2 py-1 rounded bg-white border border-gray-200 text-[10px] font-bold text-gray-700">+3</span>
+                    </div>
+                  </button>
+                  {isPaymongoSelected && (
+                    <div className="bg-gray-50 px-4 py-3 border-t border-gray-200 text-xs md:text-sm text-gray-600 text-center">
+                      You'll be redirected to PayMongo to complete your purchase securely.
+                    </div>
+                  )}
+                </div>
+
                 {paymentMethods.map((method) => (
                   <button
                     key={method.id}
@@ -1003,24 +1178,22 @@ Please confirm this order. Thank you!
                       }`}
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 bg-gold-100 rounded-lg flex items-center justify-center">
-                        <CreditCard className="w-6 h-6 text-gold-600" />
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedPaymentMethod === method.id ? 'border-navy-900' : 'border-gray-300'}`}>
+                        {selectedPaymentMethod === method.id && <div className="w-2.5 h-2.5 rounded-full bg-navy-900" />}
+                      </div>
+                      <div className="w-10 h-10 bg-gold-100 rounded-lg flex items-center justify-center">
+                        <Wallet className="w-5 h-5 text-gold-600" />
                       </div>
                       <div className="text-left">
                         <p className="font-semibold text-navy-900">{method.name}</p>
                         <p className="text-sm text-gray-500">{method.account_name}</p>
                       </div>
                     </div>
-                    {selectedPaymentMethod === method.id && (
-                      <div className="w-6 h-6 bg-gold-600 rounded-full flex items-center justify-center">
-                        <span className="text-black text-xs font-bold">✓</span>
-                      </div>
-                    )}
                   </button>
                 ))}
               </div>
 
-              {paymentMethodInfo && (
+              {!isPaymongoSelected && paymentMethodInfo && (
                 <div className="bg-gold-50 rounded-lg p-6 border border-navy-600">
                   <h3 className="font-semibold text-navy-900 mb-4">Payment Details</h3>
                   <div className="space-y-2 text-sm text-gray-700 mb-4">
@@ -1045,7 +1218,8 @@ Please confirm this order. Thank you!
               )}
             </div>
 
-            {/* Contact Method Selection */}
+            {/* Contact Method Selection (hidden for PayMongo) */}
+            {!isPaymongoSelected && (
             <div className="bg-white rounded-2xl shadow-lg p-5 md:p-6 border-2 border-navy-700/30">
               <h2 className="text-lg md:text-xl font-bold text-navy-900 mb-4 md:mb-6 flex items-center gap-2">
                 <MessageCircle className="w-5 h-5 md:w-6 md:h-6 text-gold-600" />
@@ -1074,8 +1248,10 @@ Please confirm this order. Thank you!
                 </button>
               </div>
             </div>
+            )}
 
-            {/* Payment Proof Upload */}
+            {/* Payment Proof Upload (hidden for PayMongo) */}
+            {!isPaymongoSelected && (
             <div className="bg-white rounded-2xl shadow-lg p-5 md:p-6 border-2 border-navy-700/30">
               <h2 className="text-lg md:text-xl font-bold text-navy-900 mb-4 flex items-center gap-2">
                 <FileImage className="w-5 h-5 text-gold-600" />
@@ -1133,6 +1309,7 @@ Please confirm this order. Thank you!
                 </div>
               )}
             </div>
+            )}
 
             {/* Additional Notes */}
             <div className="bg-white rounded-2xl shadow-lg p-5 md:p-6 border-2 border-navy-700/30">
@@ -1151,18 +1328,34 @@ Please confirm this order. Thank you!
               />
             </div>
 
-            <button
-              onClick={handlePlaceOrder}
-              disabled={!contactMethod || !shippingLocation || !paymentProof || isUploadingProof}
-              className={`w-full py-3 md:py-4 rounded-2xl font-bold text-base md:text-lg shadow-lg transition-all flex items-center justify-center gap-2 ${contactMethod && shippingLocation && paymentProof && !isUploadingProof
-                ? 'bg-navy-900 hover:bg-navy-800 text-white hover:shadow-xl transform hover:scale-105 border border-navy-900/20'
-                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                }`}
-            >
-              <ShieldCheck className="w-5 h-5 md:w-6 md:h-6" />
-              Complete Order
-            </button>
-            {isUploadingProof && (
+            {(() => {
+              const canSubmit = isPaymongoSelected
+                ? !!shippingLocation && !isCreatingPaymongoCheckout
+                : !!contactMethod && !!shippingLocation && !!paymentProof && !isUploadingProof;
+              return (
+                <button
+                  onClick={handlePlaceOrder}
+                  disabled={!canSubmit}
+                  className={`w-full py-3 md:py-4 rounded-2xl font-bold text-base md:text-lg shadow-lg transition-all flex items-center justify-center gap-2 ${canSubmit
+                    ? 'bg-navy-900 hover:bg-navy-800 text-white hover:shadow-xl transform hover:scale-105 border border-navy-900/20'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }`}
+                >
+                  {isCreatingPaymongoCheckout ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Redirecting to PayMongo...
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-5 h-5 md:w-6 md:h-6" />
+                      {isPaymongoSelected ? 'Pay with PayMongo' : 'Complete Order'}
+                    </>
+                  )}
+                </button>
+              );
+            })()}
+            {isUploadingProof && !isPaymongoSelected && (
               <div className="mt-2 text-center text-sm text-gray-500 flex items-center justify-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 Uploading payment proof...
