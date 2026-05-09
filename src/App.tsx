@@ -16,6 +16,7 @@ import OrderTracking from './components/OrderTracking';
 import SmartGuide from './components/SmartGuide';
 import ArticleDetail from './components/ArticleDetail';
 import ProductPage from './components/ProductPage';
+import PromoSignup from './components/PromoSignup';
 import { useMenu } from './hooks/useMenu';
 // import { useCOAPageSetting } from './hooks/useCOAPageSetting';
 
@@ -71,6 +72,8 @@ function MainApp() {
         onCartClick={() => handleViewChange('cart')}
         onMenuClick={() => handleViewChange('menu')}
       />
+
+      <PromoSignup />
 
       {currentView === 'menu' && (
         <SubNav selectedCategory={selectedCategory} onCategoryClick={handleCategoryClick} />

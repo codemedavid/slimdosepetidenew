@@ -11,6 +11,7 @@ import { mirrorOrderCreate, mirrorPromoIncrementUsage } from '../lib/convexMirro
 import { useBundleTiers } from '../hooks/useBundleTiers';
 import { useGlobalDiscount } from '../hooks/useGlobalDiscount';
 import { computeCartPricing } from '../utils/pricing';
+import { trackOrderStatus, identifyUser } from '../utils/analytics';
 
 interface CheckoutProps {
   cartItems: CartItem[];
@@ -343,6 +344,17 @@ const Checkout: React.FC<CheckoutProps> = ({ cartItems, refreshCartPrices, price
       }
 
       console.log('✅ Order saved to database:', orderData);
+
+      identifyUser(email, { name: fullName || null });
+      trackOrderStatus('new', {
+        order_id: orderData.id,
+        order_number: orderData.order_number ?? null,
+        total_price: orderData.total_price,
+        shipping_fee: shippingFee,
+        payment_method: isPaymongoSelected ? 'PayMongo' : (paymentMethod?.name || null),
+        item_count: orderItems.reduce((n, i) => n + i.quantity, 0),
+        email,
+      });
 
       // PayMongo path: create checkout session and redirect to hosted page.
       if (isPaymongoSelected) {

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Order received — SlimDose</title>
+  <style>
+    @media only screen and (max-width: 480px) {
+      .container { width: 100% !important; padding: 16px !important; }
+    }
+  </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #FFFCF6; font-family: 'Helvetica Neue', Arial, sans-serif;">
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td align="center" style="padding: 28px 12px;">
+        <table role="presentation" class="container" width="560" cellpadding="0" cellspacing="0" style="background-color: #FFFFFF; border: 1px solid #EFEFEF; border-radius: 16px; overflow: hidden;">
+
+          <tr>
+            <td style="padding: 28px 28px 8px;">
+              <p style="margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; color: #3C6CA8;">SlimDose <span style="color: #1A1A1A; font-weight: 600;">Peptides</span></p>
+              <p style="margin: 4px 0 0; font-size: 11px; color: #8A8A8A; text-transform: uppercase; letter-spacing: 0.16em; font-weight: 600;">Order Received</p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 22px 28px 8px;">
+              <h1 style="margin: 0; font-size: 26px; font-weight: 700; color: #1A1A1A; letter-spacing: -0.02em; line-height: 1.25;">We've got your order.</h1>
+              <p style="margin: 14px 0 0; font-size: 15px; color: #3D3D3D; line-height: 1.7;">Thanks for ordering with SlimDose. Your order has been received and is now waiting on confirmation from our team. You'll get another email from us once it's confirmed and moving to processing.</p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 18px 28px;">
+              <div style="background-color: #FFFCF6; border: 1px solid #EFEFEF; border-radius: 12px; padding: 18px 20px;">
+                <p style="margin: 0; font-size: 11px; color: #3C6CA8; text-transform: uppercase; letter-spacing: 0.18em; font-weight: 700;">Order Reference</p>
+                <p style="margin: 8px 0 0; font-size: 18px; font-weight: 700; color: #1A1A1A; letter-spacing: 0.02em;">#{{ event.properties.order_id }}</p>
+                <p style="margin: 6px 0 0; font-size: 13px; color: #5C5C5C;">Keep this for your records.</p>
+              </div>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 8px 28px 14px;">
+              <p style="margin: 0; font-size: 13px; color: #8A8A8A; text-transform: uppercase; letter-spacing: 0.16em; font-weight: 700;">What happens next</p>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top: 12px;">
+                <tr>
+                  <td style="padding: 6px 0; font-size: 14px; color: #3D3D3D; line-height: 1.6;">
+                    <span style="display: inline-block; width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 999px; background-color: #3C6CA8; color: #FFFFFF; font-size: 12px; font-weight: 700; margin-right: 10px; vertical-align: middle;">1</span>
+                    <span style="vertical-align: middle;">We review and confirm your order.</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; font-size: 14px; color: #3D3D3D; line-height: 1.6;">
+                    <span style="display: inline-block; width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 999px; background-color: #3C6CA8; color: #FFFFFF; font-size: 12px; font-weight: 700; margin-right: 10px; vertical-align: middle;">2</span>
+                    <span style="vertical-align: middle;">You'll receive a confirmation email with payment details.</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; font-size: 14px; color: #3D3D3D; line-height: 1.6;">
+                    <span style="display: inline-block; width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 999px; background-color: #3C6CA8; color: #FFFFFF; font-size: 12px; font-weight: 700; margin-right: 10px; vertical-align: middle;">3</span>
+                    <span style="vertical-align: middle;">Once payment clears, we ship — usually within 1–2 business days.</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 8px 28px 18px;">
+              <a href="https://slimdoseph.com" style="display: inline-block; background-color: #3C6CA8; color: #FFFFFF; text-decoration: none; padding: 12px 22px; border-radius: 999px; font-size: 14px; font-weight: 600;">Visit SlimDose</a>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 6px 28px 14px;">
+              <p style="margin: 0; font-size: 14px; color: #5C5C5C; line-height: 1.7;">Questions about your order? Just reply to this email and a real person will get back to you.</p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 18px 28px 24px; background-color: #FFFCF6; border-top: 1px solid #EFEFEF;">
+              <p style="margin: 0; font-size: 12px; color: #8A8A8A; line-height: 1.6;">
+                © SlimDose Peptides &middot; <a href="https://slimdoseph.com" style="color: #3C6CA8; text-decoration: none;">slimdoseph.com</a>
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

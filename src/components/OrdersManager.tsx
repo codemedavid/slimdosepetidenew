@@ -9,6 +9,7 @@ import {
   mirrorProductAdjustStock,
   mirrorVariationAdjustStock,
 } from '../lib/convexMirror';
+import { trackOrderStatus, trackPaymentStatus, type OrderStatus } from '../utils/analytics';
 
 interface OrderItem {
   product_id: string;
@@ -191,6 +192,20 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ onBack }) => {
 
       if (updateError) throw updateError;
       mirrorOrderUpdateStatus(order.id, { order_status: 'confirmed', payment_status: 'paid' });
+      trackOrderStatus('confirmed', {
+        order_id: order.id,
+        order_number: order.order_number ?? null,
+        total_price: order.total_price,
+        customer_email: order.customer_email,
+        customer_name: order.customer_name,
+      });
+      trackPaymentStatus('paid', {
+        order_id: order.id,
+        order_number: order.order_number ?? null,
+        total_price: order.total_price,
+        customer_email: order.customer_email,
+        customer_name: order.customer_name,
+      });
 
       // Refresh orders and products
       await loadOrders();
@@ -222,6 +237,14 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ onBack }) => {
 
       if (error) throw error;
       mirrorOrderUpdateStatus(orderId, { order_status: newStatus });
+      const targetOrder = orders.find(o => o.id === orderId);
+      trackOrderStatus(newStatus as OrderStatus, {
+        order_id: orderId,
+        order_number: targetOrder?.order_number ?? null,
+        total_price: targetOrder?.total_price ?? null,
+        customer_email: targetOrder?.customer_email ?? null,
+        customer_name: targetOrder?.customer_name ?? null,
+      });
       await loadOrders();
       if (selectedOrder?.id === orderId) {
         setSelectedOrder({ ...selectedOrder, order_status: newStatus });
