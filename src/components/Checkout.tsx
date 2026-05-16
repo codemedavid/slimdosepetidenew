@@ -1167,10 +1167,11 @@ Please confirm this order. Thank you!
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <span className="px-2 py-1 rounded bg-white border border-gray-200 text-[10px] font-bold text-gray-700">QRPH</span>
                       <span className="px-2 py-1 rounded bg-white border border-gray-200 text-[10px] font-bold text-gray-700">GCash</span>
                       <span className="px-2 py-1 rounded bg-white border border-gray-200 text-[10px] font-bold text-gray-700">Maya</span>
                       <span className="px-2 py-1 rounded bg-white border border-gray-200 text-[10px] font-bold text-gray-700">VISA</span>
-                      <span className="px-2 py-1 rounded bg-white border border-gray-200 text-[10px] font-bold text-gray-700">+3</span>
+                      <span className="px-2 py-1 rounded bg-white border border-gray-200 text-[10px] font-bold text-gray-700">+2</span>
                     </div>
                   </button>
                   {isPaymongoSelected && (
