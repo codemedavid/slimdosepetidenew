@@ -36,11 +36,6 @@ const PromoSignup: React.FC = () => {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (localStorage.getItem(SUBSCRIBED_KEY) === '1') return;
-
-    const dismissedAt = Number(localStorage.getItem(POPUP_DISMISSED_KEY) || 0);
-    const cooldownMs = POPUP_COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
-    if (dismissedAt && Date.now() - dismissedAt < cooldownMs) return;
 
     const t = window.setTimeout(() => {
       setPopupVisible(true);
@@ -51,9 +46,6 @@ const PromoSignup: React.FC = () => {
 
   const dismissPopup = () => {
     setPopupVisible(false);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(POPUP_DISMISSED_KEY, String(Date.now()));
-    }
     trackEvent('promo_popup_dismissed', {});
   };
 
