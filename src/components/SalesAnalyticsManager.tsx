@@ -274,16 +274,40 @@ const SalesAnalyticsManager: React.FC<SalesAnalyticsManagerProps> = ({ onBack })
             if (error) throw error;
 
             const variationIds = new Set<string>();
-            (data || []).forEach((o: any) => (o.order_items || []).forEach((i: any) => i.variation_id && variationIds.add(i.variation_id)));
+            const productIds = new Set<string>();
+            (data || []).forEach((o: any) => (o.order_items || []).forEach((i: any) => {
+                if (i.variation_id) variationIds.add(i.variation_id);
+                if (i.product_id) productIds.add(i.product_id);
+            }));
 
             const costMap = new Map<string, number>();
+            const variationToProduct = new Map<string, string>();
             if (variationIds.size > 0) {
                 const { data: variations } = await supabase
                     .from('product_variations')
-                    .select('id, cost_price')
+                    .select('id, product_id, cost_price')
                     .in('id', Array.from(variationIds));
-                (variations || []).forEach((v: any) => costMap.set(v.id, toNum(v.cost_price)));
+                (variations || []).forEach((v: any) => {
+                    costMap.set(v.id, toNum(v.cost_price));
+                    if (v.product_id) variationToProduct.set(v.id, v.product_id);
+                });
             }
+
+            const rawPriceMap = new Map<string, number>();
+            if (productIds.size > 0) {
+                const { data: prods } = await supabase
+                    .from('products')
+                    .select('id, raw_price')
+                    .in('id', Array.from(productIds));
+                (prods || []).forEach((p: any) => rawPriceMap.set(p.id, toNum(p.raw_price)));
+            }
+
+            const unitCostFor = (item: any) => {
+                const vCost = item.variation_id ? costMap.get(item.variation_id) ?? 0 : 0;
+                if (vCost > 0) return vCost;
+                const pid = item.product_id || (item.variation_id ? variationToProduct.get(item.variation_id) : undefined);
+                return pid ? rawPriceMap.get(pid) ?? 0 : 0;
+            };
 
             const rows: (string | number)[][] = [
                 ['Order #', 'Date', 'Customer', 'Email', 'Phone', 'Status', 'Payment', 'Items', 'Units', 'Gross Sales', 'Raw Cost', 'Profit', 'Margin %', 'Discount', 'Shipping', 'Total Paid'],
@@ -294,7 +318,7 @@ const SalesAnalyticsManager: React.FC<SalesAnalyticsManagerProps> = ({ onBack })
                 const itemSummary = items.map(i => `${i.product_name}${i.variation_name ? ` (${i.variation_name})` : ''} x${i.quantity}`).join('; ');
                 const units = items.reduce((s, i) => s + toNum(i.quantity), 0);
                 const gross = items.reduce((s, i) => s + toNum(i.total), 0);
-                const cost = items.reduce((s, i) => s + toNum(i.quantity) * (costMap.get(i.variation_id) ?? 0), 0);
+                const cost = items.reduce((s, i) => s + toNum(i.quantity) * unitCostFor(i), 0);
                 const profit = gross - cost;
                 const marginPct = gross > 0 ? (profit / gross) * 100 : 0;
 

@@ -5,6 +5,7 @@ export interface Product {
   description: string;
   category: string;
   base_price: number;
+  raw_price: number;
   discount_price: number | null;
   discount_start_date: string | null;
   discount_end_date: string | null;

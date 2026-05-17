@@ -48,6 +48,7 @@ const AdminDashboard: React.FC = () => {
     slug: '',
     description: '',
     base_price: 0,
+    raw_price: 0,
     category: 'research',
     featured: false,
     available: true,
@@ -281,6 +282,7 @@ const AdminDashboard: React.FC = () => {
           'description',
           'category',
           'base_price',
+          'raw_price',
           'discount_price',
           'discount_active',
           'purity_percentage',
@@ -650,6 +652,26 @@ const AdminDashboard: React.FC = () => {
                         <span>This product has <strong>{editingProduct.variations.length} size variation(s)</strong>. Customers will see those prices instead of this base price. Use the <strong>"Manage Sizes"</strong> button to update the prices shown on the website.</span>
                       </p>
                     )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Raw Price (₱)</label>
+                    <input
+                      type="number"
+                      step="1"
+                      value={formData.raw_price ?? ''}
+                      onChange={(e) => setFormData({ ...formData, raw_price: Number(e.target.value) })}
+                      className="input-field text-sm"
+                      placeholder="0"
+                    />
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      Wholesale / unit cost. Used in Sales Analytics to compute profit when a variation has no cost price.
+                    </p>
+                    {formData.base_price && formData.raw_price ? (
+                      <p className="text-[11px] text-emerald-700 mt-1">
+                        Margin: ₱{(Number(formData.base_price) - Number(formData.raw_price)).toLocaleString()} ({(((Number(formData.base_price) - Number(formData.raw_price)) / Number(formData.base_price)) * 100).toFixed(1)}%)
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               </div>

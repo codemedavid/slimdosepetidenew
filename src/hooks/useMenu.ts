@@ -116,7 +116,7 @@ export function useMenu() {
 
       const { data, error } = await supabase
         .from('products')
-        .select('id, name, slug, description, category, base_price, discount_price, discount_start_date, discount_end_date, discount_active, purity_percentage, molecular_weight, cas_number, sequence, storage_conditions, inclusions, stock_quantity, available, featured, image_url, safety_sheet_url, coa_url, created_at, updated_at')
+        .select('id, name, slug, description, category, base_price, raw_price, discount_price, discount_start_date, discount_end_date, discount_active, purity_percentage, molecular_weight, cas_number, sequence, storage_conditions, inclusions, stock_quantity, available, featured, image_url, safety_sheet_url, coa_url, created_at, updated_at')
         .eq('available', true)
         .order('featured', { ascending: false })
         .order('name', { ascending: true });
