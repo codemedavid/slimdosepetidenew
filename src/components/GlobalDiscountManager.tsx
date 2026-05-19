@@ -2,12 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useGlobalDiscountAdmin } from '../hooks/useGlobalDiscount';
 import type { GlobalDiscount, Product } from '../types';
-import { Plus, Trash2, Edit2, CheckCircle, XCircle, Percent, Search, X } from 'lucide-react';
+import { Plus, Trash2, Edit2, CheckCircle, XCircle, Percent, Search, X, AlertTriangle } from 'lucide-react';
 
 const toIsoBoundary = (dateValue: string, boundary: 'start' | 'end') => {
   const timePart = boundary === 'start' ? 'T00:00:00.000' : 'T23:59:59.999';
   return new Date(`${dateValue}${timePart}`).toISOString();
 };
+
+const isDateInPast = (isoString?: string | null) => {
+  if (!isoString) return false;
+  const parsed = new Date(isoString);
+  if (Number.isNaN(parsed.getTime())) return false;
+  return parsed.getTime() < Date.now();
+};
+
+const isDiscountExpired = (discount: Pick<GlobalDiscount, 'end_date'>) =>
+  isDateInPast(discount.end_date);
 
 const GlobalDiscountManager: React.FC = () => {
   const { discounts, loading, saveDiscount, deleteDiscount, toggleActive } = useGlobalDiscountAdmin();
@@ -63,6 +73,18 @@ const GlobalDiscountManager: React.FC = () => {
     if (!confirm('Are you sure you want to delete this global discount?')) return;
     const result = await deleteDiscount(id);
     if (!result.success) alert(`Error: ${result.error}`);
+  };
+
+  const handleToggleActive = async (discount: GlobalDiscount) => {
+    const turningOn = !discount.active;
+    if (turningOn && isDiscountExpired(discount)) {
+      const endDate = discount.end_date ? new Date(discount.end_date).toLocaleDateString() : '';
+      const proceed = confirm(
+        `Heads up: this discount's end date (${endDate}) is already in the past, so customers won't see it even if you turn it on.\n\nEdit the discount and update the end date first. Activate anyway?`
+      );
+      if (!proceed) return;
+    }
+    await toggleActive(discount.id, turningOn);
   };
 
   const resetForm = () => {
@@ -185,17 +207,28 @@ const GlobalDiscountManager: React.FC = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      <button
-                        onClick={() => toggleActive(discount.id, !discount.active)}
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-                          discount.active
-                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                        }`}
-                      >
-                        {discount.active ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                        {discount.active ? 'Active' : 'Inactive'}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleToggleActive(discount)}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                            discount.active
+                              ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          {discount.active ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                          {discount.active ? 'Active' : 'Inactive'}
+                        </button>
+                        {isDiscountExpired(discount) && (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 uppercase tracking-wide"
+                            title="End date is in the past — customers won't see this discount even if Active."
+                          >
+                            <AlertTriangle className="w-3 h-3" />
+                            Expired
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">
                       {discount.excluded_product_ids?.length || 0} product(s)
@@ -297,10 +330,18 @@ const GlobalDiscountManager: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">End Date (optional)</label>
                   <input
                     type="date"
-                    className="w-full px-4 py-2 border border-gray-200 rounded-lg"
+                    className={`w-full px-4 py-2 border rounded-lg ${
+                      isDateInPast(formData.end_date) ? 'border-red-400 bg-red-50' : 'border-gray-200'
+                    }`}
                     value={formData.end_date ? formData.end_date.split('T')[0] : ''}
                     onChange={e => setFormData({ ...formData, end_date: e.target.value ? toIsoBoundary(e.target.value, 'end') : undefined })}
                   />
+                  {isDateInPast(formData.end_date) && (
+                    <p className="mt-1.5 text-xs text-red-700 flex items-start gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                      End date is in the past. Customers won't see this discount until you push it to a future date or clear it.
+                    </p>
+                  )}
                 </div>
               </div>
 

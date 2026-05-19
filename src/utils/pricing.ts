@@ -99,10 +99,14 @@ export interface PricedLine {
 
 export interface CartPricing {
   lines: PricedLine[];
+  originalSubtotal: number;
+  itemDiscountSavings: number;
   subtotalBeforeBundle: number;
   bundleSavings: number;
   subtotal: number;
+  totalSavingsBeforePromo: number;
   hasBundleDiscount: boolean;
+  hasItemDiscount: boolean;
 }
 
 export const getCartItemUnitBasePrice = (
@@ -149,13 +153,22 @@ export const computeCartPricing = (
     (sum, item, i) => sum + lines[i].unitBasePrice * item.quantity,
     0
   );
+  const originalSubtotal = items.reduce((sum, item) => {
+    const unitOriginal = item.variation?.price ?? item.product.base_price;
+    return sum + unitOriginal * item.quantity;
+  }, 0);
+  const itemDiscountSavings = Math.max(0, originalSubtotal - subtotalBeforeBundle);
   const bundleSavings = lines.reduce((sum, l) => sum + l.lineSavings, 0);
   const subtotal = subtotalBeforeBundle - bundleSavings;
   return {
     lines,
+    originalSubtotal,
+    itemDiscountSavings,
     subtotalBeforeBundle,
     bundleSavings,
     subtotal,
+    totalSavingsBeforePromo: itemDiscountSavings + bundleSavings,
     hasBundleDiscount: bundleSavings > 0,
+    hasItemDiscount: itemDiscountSavings > 0,
   };
 };

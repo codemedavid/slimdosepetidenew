@@ -16,8 +16,9 @@ export function useGlobalDiscount() {
   useEffect(() => {
     fetchGlobalDiscount();
 
+    const channelName = `global-discounts-realtime-${Math.random().toString(36).slice(2)}`;
     const channel = supabase
-      .channel('global-discounts-realtime')
+      .channel(channelName)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'global_discounts' },

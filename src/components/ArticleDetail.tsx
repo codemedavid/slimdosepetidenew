@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { ArrowLeft, Calendar, User, ShoppingCart, Package, Check } from 'lucide-react';
+import { useGlobalDiscount } from '../hooks/useGlobalDiscount';
+import { getGlobalDiscountedPrice } from '../utils/pricing';
 
 interface Article {
     id: string;
@@ -50,6 +52,7 @@ const sanitizeHtml = (html: string): string => {
 export default function ArticleDetail() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const { globalDiscount } = useGlobalDiscount();
     const [article, setArticle] = useState<Article | null>(null);
     const [loading, setLoading] = useState(true);
     const [relatedProducts, setRelatedProducts] = useState<RelatedProduct[]>([]);
@@ -189,14 +192,25 @@ export default function ArticleDetail() {
         }, 2000);
     };
 
-    const getProductPrice = (product: RelatedProduct) => {
-        if (product.discount_active && product.discount_price) {
-            return product.discount_price;
-        }
-        if (product.variations && product.variations.length > 0) {
-            return Math.min(...product.variations.map(v => v.price));
-        }
-        return product.base_price;
+    const getProductPricing = (product: RelatedProduct) => {
+        const baseFromPrice = product.variations && product.variations.length > 0
+            ? Math.min(...product.variations.map(v => v.price))
+            : product.base_price;
+
+        const individualPrice = product.discount_active && product.discount_price
+            ? product.discount_price
+            : baseFromPrice;
+
+        const globalResult = getGlobalDiscountedPrice(baseFromPrice, product.id, globalDiscount);
+        const finalPrice = globalResult.hasGlobalDiscount && globalResult.price < individualPrice
+            ? globalResult.price
+            : individualPrice;
+
+        return {
+            originalPrice: baseFromPrice,
+            price: finalPrice,
+            hasDiscount: finalPrice < baseFromPrice,
+        };
     };
 
     if (loading) {
@@ -324,7 +338,9 @@ export default function ArticleDetail() {
                             </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                {relatedProducts.map((product) => (
+                                {relatedProducts.map((product) => {
+                                    const productPricing = getProductPricing(product);
+                                    return (
                                     <div
                                         key={product.id}
                                         className="bg-white rounded-xl border border-gray-200 shadow-md overflow-hidden hover:shadow-lg transition-shadow"
@@ -343,12 +359,19 @@ export default function ArticleDetail() {
                                             )}
                                             <div className="flex-1 min-w-0">
                                                 <h4 className="font-semibold text-navy-900 truncate mb-1">{product.name}</h4>
-                                                <p className="text-lg font-bold text-theme-accent">
-                                                    ₱{getProductPrice(product).toLocaleString()}
-                                                    {product.variations && product.variations.length > 1 && (
-                                                        <span className="text-xs text-gray-500 font-normal ml-1">starting</span>
+                                                <div className="flex items-baseline gap-2 flex-wrap">
+                                                    {productPricing.hasDiscount && (
+                                                        <span className="text-sm text-gray-400 line-through">
+                                                            ₱{productPricing.originalPrice.toLocaleString()}
+                                                        </span>
                                                     )}
-                                                </p>
+                                                    <p className="text-lg font-bold text-theme-accent">
+                                                        ₱{productPricing.price.toLocaleString()}
+                                                        {product.variations && product.variations.length > 1 && (
+                                                            <span className="text-xs text-gray-500 font-normal ml-1">starting</span>
+                                                        )}
+                                                    </p>
+                                                </div>
                                             </div>
                                         </div>
                                         <button
@@ -363,7 +386,8 @@ export default function ArticleDetail() {
                                             {addedToCart.has(product.id) ? 'Added to Cart!' : 'Add to Cart'}
                                         </button>
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     )}

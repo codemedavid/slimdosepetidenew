@@ -2,15 +2,45 @@ import React, { useEffect, useState } from 'react';
 import { Mail, X, Sparkles, Check, ArrowRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { trackEvent, identifyUser } from '../utils/analytics';
+import { useGlobalDiscount } from '../hooks/useGlobalDiscount';
+import type { GlobalDiscount } from '../types';
 
 const POPUP_DISMISSED_KEY = 'sldp_promo_popup_dismissed_at';
 const SUBSCRIBED_KEY = 'sldp_promo_subscribed';
 const POPUP_DELAY_MS = 8000;
 const POPUP_COOLDOWN_DAYS = 7;
+const DEFAULT_DISCOUNT_LABEL = '10% Off';
 
 type Status = 'idle' | 'submitting' | 'success' | 'error';
 
 const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+
+const buildDiscountLabel = (discount: GlobalDiscount | null): string => {
+  if (!discount) return DEFAULT_DISCOUNT_LABEL;
+  return discount.discount_type === 'percentage'
+    ? `${discount.discount_value}% Off`
+    : `₱${discount.discount_value} Off`;
+};
+
+const buildDiscountPayload = (discount: GlobalDiscount | null) => {
+  const label = buildDiscountLabel(discount);
+  if (!discount) {
+    return {
+      discount_active: false,
+      discount_label: label,
+    };
+  }
+  return {
+    discount_active: true,
+    discount_id: discount.id,
+    discount_name: discount.name,
+    discount_type: discount.discount_type,
+    discount_value: discount.discount_value,
+    discount_label: label,
+    discount_start_date: discount.start_date ?? null,
+    discount_end_date: discount.end_date ?? null,
+  };
+};
 
 async function saveSubscriber(email: string, source: 'banner' | 'popup'): Promise<string | null> {
   const trimmed = email.trim().toLowerCase();
@@ -25,6 +55,7 @@ async function saveSubscriber(email: string, source: 'banner' | 'popup'): Promis
 }
 
 const PromoSignup: React.FC = () => {
+  const { globalDiscount } = useGlobalDiscount();
   const [bannerVisible, setBannerVisible] = useState(true);
   const [popupVisible, setPopupVisible] = useState(false);
   const [bannerEmail, setBannerEmail] = useState('');
@@ -34,28 +65,32 @@ const PromoSignup: React.FC = () => {
   const [bannerError, setBannerError] = useState<string | null>(null);
   const [popupError, setPopupError] = useState<string | null>(null);
 
+  const discountLabel = buildDiscountLabel(globalDiscount);
+  const discountPayload = buildDiscountPayload(globalDiscount);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const t = window.setTimeout(() => {
       setPopupVisible(true);
-      trackEvent('promo_popup_shown', {});
+      trackEvent('promo_popup_shown', { ...discountPayload });
     }, POPUP_DELAY_MS);
     return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const dismissPopup = () => {
     setPopupVisible(false);
-    trackEvent('promo_popup_dismissed', {});
+    trackEvent('promo_popup_dismissed', { ...discountPayload });
   };
 
   const submitBanner = async (e: React.FormEvent) => {
     e.preventDefault();
     setBannerError(null);
-    trackEvent('promo_subscribe_clicked', { source: 'banner' });
+    trackEvent('promo_subscribe_clicked', { source: 'banner', ...discountPayload });
     if (!isValidEmail(bannerEmail)) {
       setBannerError('Please enter a valid email.');
-      trackEvent('promo_subscribe_invalid_email', { source: 'banner' });
+      trackEvent('promo_subscribe_invalid_email', { source: 'banner', ...discountPayload });
       return;
     }
     setBannerStatus('submitting');
@@ -63,22 +98,23 @@ const PromoSignup: React.FC = () => {
     if (err) {
       setBannerStatus('error');
       setBannerError(err);
-      trackEvent('promo_subscribe_failed', { source: 'banner', message: err });
+      trackEvent('promo_subscribe_failed', { source: 'banner', message: err, ...discountPayload });
       return;
     }
     setBannerStatus('success');
     if (typeof window !== 'undefined') localStorage.setItem(SUBSCRIBED_KEY, '1');
-    identifyUser(bannerEmail, { source: 'banner' });
-    trackEvent('promo_subscribed', { source: 'banner', email: bannerEmail.trim().toLowerCase() });
+    const normalizedEmail = bannerEmail.trim().toLowerCase();
+    identifyUser(normalizedEmail, { source: 'banner', ...discountPayload });
+    trackEvent('promo_subscribed', { source: 'banner', email: normalizedEmail, ...discountPayload });
   };
 
   const submitPopup = async (e: React.FormEvent) => {
     e.preventDefault();
     setPopupError(null);
-    trackEvent('promo_subscribe_clicked', { source: 'popup' });
+    trackEvent('promo_subscribe_clicked', { source: 'popup', ...discountPayload });
     if (!isValidEmail(popupEmail)) {
       setPopupError('Please enter a valid email.');
-      trackEvent('promo_subscribe_invalid_email', { source: 'popup' });
+      trackEvent('promo_subscribe_invalid_email', { source: 'popup', ...discountPayload });
       return;
     }
     setPopupStatus('submitting');
@@ -86,13 +122,14 @@ const PromoSignup: React.FC = () => {
     if (err) {
       setPopupStatus('error');
       setPopupError(err);
-      trackEvent('promo_subscribe_failed', { source: 'popup', message: err });
+      trackEvent('promo_subscribe_failed', { source: 'popup', message: err, ...discountPayload });
       return;
     }
     setPopupStatus('success');
     if (typeof window !== 'undefined') localStorage.setItem(SUBSCRIBED_KEY, '1');
-    identifyUser(popupEmail, { source: 'popup' });
-    trackEvent('promo_subscribed', { source: 'popup', email: popupEmail.trim().toLowerCase() });
+    const normalizedEmail = popupEmail.trim().toLowerCase();
+    identifyUser(normalizedEmail, { source: 'popup', ...discountPayload });
+    trackEvent('promo_subscribed', { source: 'popup', email: normalizedEmail, ...discountPayload });
     window.setTimeout(() => setPopupVisible(false), 1800);
   };
 
@@ -197,7 +234,7 @@ const PromoSignup: React.FC = () => {
                 <h3 className="font-heading font-bold text-charcoal-900 leading-[1.05] tracking-tight">
                   <span className="block text-3xl sm:text-4xl">Get</span>
                   <span className="block text-5xl sm:text-6xl bg-gradient-to-br from-brand-500 to-brand-700 bg-clip-text text-transparent my-1">
-                    10% Off
+                    {discountLabel}
                   </span>
                   <span className="block text-xl sm:text-2xl text-charcoal-700 font-normal italic">
                     your first order
@@ -242,7 +279,7 @@ const PromoSignup: React.FC = () => {
                   >
                     {popupStatus === 'submitting' ? 'Subscribing...' : (
                       <>
-                        Claim My 10% Off
+                        Claim My {discountLabel}
                         <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
                       </>
                     )}

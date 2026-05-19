@@ -98,6 +98,11 @@ const MenuItemCard: React.FC<MenuItemCardProps> = ({
             {hasMultipleVariations && (
               <span className="block text-[10px] text-charcoal-400 font-medium leading-tight">From</span>
             )}
+            {hasDiscount && (
+              <span className="block text-[11px] sm:text-xs text-charcoal-300 line-through leading-tight">
+                ₱{originalPrice.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
+              </span>
+            )}
             <span className="block text-base sm:text-lg font-bold text-charcoal-900 leading-tight">
               ₱{currentPrice.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
             </span>
@@ -105,7 +110,7 @@ const MenuItemCard: React.FC<MenuItemCardProps> = ({
         </div>
 
         <p className="text-xs text-charcoal-500 line-clamp-1 mb-3 sm:mb-4">
-          {product.category || product.description}
+          {product.description}
         </p>
 
         <div className="flex-1" />

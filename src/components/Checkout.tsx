@@ -33,6 +33,9 @@ const Checkout: React.FC<CheckoutProps> = ({ cartItems, refreshCartPrices, price
   const totalPrice = pricing.subtotal; // bundle-adjusted subtotal
   const bundleSavings = pricing.bundleSavings;
   const hasBundleDiscount = pricing.hasBundleDiscount;
+  const itemDiscountSavings = pricing.itemDiscountSavings;
+  const hasItemDiscount = pricing.hasItemDiscount;
+  const originalSubtotal = pricing.originalSubtotal;
 
   useEffect(() => {
     refreshCartPrices();
@@ -932,11 +935,8 @@ Please confirm this order. Thank you!
                       ? item.variation!.price * item.quantity
                       : item.product.base_price * item.quantity;
                     const currentPrice = line ? line.lineSubtotal : item.price * item.quantity;
-                    const hasProductDiscount = (hasVariation
-                      ? (item.variation!.discount_active && item.variation!.discount_price !== null)
-                      : (item.product.discount_active && item.product.discount_price !== null))
-                      || (line?.bundlePercent ?? 0) > 0;
                     const savedAmount = originalPrice - currentPrice;
+                    const hasProductDiscount = savedAmount > 0;
 
                     return (
                       <div key={index} className="pb-4 border-b border-gray-200">
@@ -1035,62 +1035,62 @@ Please confirm this order. Thank you!
                     )}
                   </div>
 
-                  {hasBundleDiscount && (
+                  {(hasItemDiscount || hasBundleDiscount || discountAmount > 0) ? (
                     <>
                       <div className="flex justify-between items-center">
                         <span className="text-gray-600">Subtotal</span>
                         <div className="flex items-center gap-2">
-                          <span className="text-gray-400 line-through text-sm">
-                            ₱{pricing.subtotalBeforeBundle.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
-                          </span>
+                          {(hasItemDiscount || hasBundleDiscount) && (
+                            <span className="text-gray-400 line-through text-sm">
+                              ₱{originalSubtotal.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
+                            </span>
+                          )}
                           <span className="font-semibold text-green-600">
                             ₱{totalPrice.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
                           </span>
                         </div>
                       </div>
-                      <div className="flex justify-between items-center bg-green-50 -mx-6 px-6 py-2 border-y border-green-100">
-                        <span className="flex items-center gap-1.5 text-green-700 font-medium text-sm">
-                          <Tag className="w-4 h-4" />
-                          Bundle discount
-                        </span>
-                        <span className="font-bold text-green-700 text-sm">
-                          -₱{bundleSavings.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
-                        </span>
-                      </div>
-                    </>
-                  )}
-                  {/* Subtotal with discount pricing */}
-                  {hasBundleDiscount ? null : discountAmount > 0 ? (
-                    <>
-                      {/* Discounted Subtotal Display */}
-                      <div className="flex justify-between items-center">
-                        <span className="text-gray-600">Subtotal</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-400 line-through text-sm">
-                            ₱{totalPrice.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
+
+                      {hasItemDiscount && (
+                        <div className="flex justify-between items-center bg-green-50 -mx-6 px-6 py-2 border-y border-green-100">
+                          <span className="flex items-center gap-1.5 text-green-700 font-medium text-sm">
+                            <Tag className="w-4 h-4" />
+                            Discount on items
                           </span>
-                          <span className="font-semibold text-green-600">
-                            ₱{(totalPrice - discountAmount).toLocaleString('en-PH', { minimumFractionDigits: 0 })}
+                          <span className="font-bold text-green-700 text-sm">
+                            -₱{itemDiscountSavings.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
                           </span>
                         </div>
-                      </div>
+                      )}
 
-                      {/* Savings Badge */}
-                      <div className="flex justify-between items-center bg-green-50 -mx-6 px-6 py-3 rounded-lg border border-green-100">
-                        <span className="flex items-center gap-1.5 text-green-700 font-medium text-sm">
-                          <Tag className="w-4 h-4" />
-                          Discount ({appliedPromo?.code})
-                        </span>
-                        <span className="font-bold text-green-700">
-                          -₱{discountAmount.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
-                        </span>
-                      </div>
+                      {hasBundleDiscount && (
+                        <div className="flex justify-between items-center bg-green-50 -mx-6 px-6 py-2 border-y border-green-100">
+                          <span className="flex items-center gap-1.5 text-green-700 font-medium text-sm">
+                            <Tag className="w-4 h-4" />
+                            Bundle discount
+                          </span>
+                          <span className="font-bold text-green-700 text-sm">
+                            -₱{bundleSavings.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
+                          </span>
+                        </div>
+                      )}
 
-                      {/* You Saved Message */}
-                      <div className="flex justify-center -mx-6 px-6 py-2 bg-gradient-to-r from-green-500 to-green-600 -mt-2">
+                      {discountAmount > 0 && (
+                        <div className="flex justify-between items-center bg-green-50 -mx-6 px-6 py-2 border-y border-green-100">
+                          <span className="flex items-center gap-1.5 text-green-700 font-medium text-sm">
+                            <Tag className="w-4 h-4" />
+                            Promo ({appliedPromo?.code})
+                          </span>
+                          <span className="font-bold text-green-700 text-sm">
+                            -₱{discountAmount.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="flex justify-center -mx-6 px-6 py-2 bg-gradient-to-r from-green-500 to-green-600">
                         <p className="text-white text-sm font-bold flex items-center gap-1.5">
                           <Sparkles className="w-4 h-4" />
-                          You saved ₱{discountAmount.toLocaleString('en-PH', { minimumFractionDigits: 0 })}!
+                          You saved ₱{(itemDiscountSavings + bundleSavings + discountAmount).toLocaleString('en-PH', { minimumFractionDigits: 0 })}!
                         </p>
                       </div>
                     </>
@@ -1464,10 +1464,8 @@ Please confirm this order. Thank you!
                     ? item.variation!.price * item.quantity
                     : item.product.base_price * item.quantity;
                   const currentPrice = item.price * item.quantity;
-                  const hasProductDiscount = hasVariation
-                    ? (item.variation!.discount_active && item.variation!.discount_price !== null)
-                    : (item.product.discount_active && item.product.discount_price !== null);
                   const savedAmount = originalPrice - currentPrice;
+                  const hasProductDiscount = savedAmount > 0;
 
                   return (
                     <div key={index} className="pb-3 border-b border-gray-100 last:border-0">
