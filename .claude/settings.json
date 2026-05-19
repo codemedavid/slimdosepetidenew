@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "pleaseai": {
+      "source": {
+        "source": "github",
+        "repo": "pleaseai/claude-code-plugins"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "agent-browser@pleaseai": true
+  }
+}

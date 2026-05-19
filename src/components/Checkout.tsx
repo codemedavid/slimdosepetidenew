@@ -38,6 +38,29 @@ const Checkout: React.FC<CheckoutProps> = ({ cartItems, refreshCartPrices, price
     refreshCartPrices();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Autofill from saved cookie on mount
+  useEffect(() => {
+    try {
+      const match = document.cookie
+        .split('; ')
+        .find((row) => row.startsWith('slimdose_checkout='));
+      if (!match) return;
+      const raw = decodeURIComponent(match.split('=').slice(1).join('='));
+      const saved = JSON.parse(raw);
+      if (saved.fullName) setFullName(saved.fullName);
+      if (saved.email) setEmail(saved.email);
+      if (saved.phone) setPhone(saved.phone);
+      if (saved.address) setAddress(saved.address);
+      if (saved.barangay) setBarangay(saved.barangay);
+      if (saved.city) setCity(saved.city);
+      if (saved.state) setState(saved.state);
+      if (saved.zipCode) setZipCode(saved.zipCode);
+      if (saved.shippingLocation) setShippingLocation(saved.shippingLocation);
+    } catch (err) {
+      console.warn('Failed to read saved checkout cookie:', err);
+    }
+  }, []);
   const { paymentMethods } = usePaymentMethods();
   const { locations: shippingLocations, getShippingFee } = useShippingLocations();
   const [step, setStep] = useState<'details' | 'payment' | 'confirmation'>('details');
@@ -193,7 +216,7 @@ const Checkout: React.FC<CheckoutProps> = ({ cartItems, refreshCartPrices, price
 
   const isDetailsValid =
     fullName.trim() !== '' &&
-    email.trim() !== '' &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) &&
     phone.trim() !== '' &&
     address.trim() !== '' &&
     barangay.trim() !== '' &&
@@ -345,16 +368,53 @@ const Checkout: React.FC<CheckoutProps> = ({ cartItems, refreshCartPrices, price
 
       console.log('✅ Order saved to database:', orderData);
 
-      identifyUser(email, { name: fullName || null });
-      trackOrderStatus('new', {
-        order_id: orderData.id,
-        order_number: orderData.order_number ?? null,
-        total_price: orderData.total_price,
-        shipping_fee: shippingFee,
-        payment_method: isPaymongoSelected ? 'PayMongo' : (paymentMethod?.name || null),
-        item_count: orderItems.reduce((n, i) => n + i.quantity, 0),
-        email,
-      });
+      // Save customer/shipping info to cookie for autofill on next checkout (1 year)
+      try {
+        const checkoutInfo = {
+          fullName,
+          email,
+          phone,
+          address,
+          barangay,
+          city,
+          state,
+          zipCode,
+          shippingLocation,
+        };
+        const oneYear = 60 * 60 * 24 * 365;
+        document.cookie = `slimdose_checkout=${encodeURIComponent(
+          JSON.stringify(checkoutInfo)
+        )}; path=/; max-age=${oneYear}; SameSite=Lax`;
+      } catch (err) {
+        console.warn('Failed to save checkout cookie:', err);
+      }
+
+      const normalizedEmail = email.trim().toLowerCase();
+      if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        identifyUser(normalizedEmail, { name: fullName || null });
+        const itemsSummary = orderItems
+          .map((i) => {
+            const name = i.variation_name ? `${i.product_name} — ${i.variation_name}` : i.product_name;
+            return `${i.quantity} × ${name} — ₱${(i.total).toLocaleString()}`;
+          })
+          .join('\n');
+        trackOrderStatus('new', {
+          order_id: orderData.id,
+          order_number: orderData.order_number ?? null,
+          items_summary: itemsSummary,
+          subtotal: totalPrice.toLocaleString(),
+          shipping_fee: shippingFee.toLocaleString(),
+          discount: discountAmount.toLocaleString(),
+          promo_code: appliedPromo?.code || promoCode || '',
+          total_price: finalTotal.toLocaleString(),
+          payment_method: isPaymongoSelected ? 'PayMongo' : (paymentMethod?.name || '—'),
+          contact_method: contactMethod ? (contactMethod.charAt(0).toUpperCase() + contactMethod.slice(1)) : '—',
+          item_count: orderItems.reduce((n, i) => n + i.quantity, 0),
+          email: normalizedEmail,
+        });
+      } else {
+        console.warn('Skipping order tracking: invalid email', email);
+      }
 
       // PayMongo path: create checkout session and redirect to hosted page.
       if (isPaymongoSelected) {

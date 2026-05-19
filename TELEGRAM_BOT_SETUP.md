@@ -5,6 +5,8 @@ This adds two Supabase Edge Functions and one column to `orders`:
 - `supabase/functions/telegram-notify-order` — sends a message to a private Telegram group when a new order is placed, with **Confirm** / **Cancel** inline buttons.
 - `supabase/functions/telegram-webhook` — receives the button presses, checks the user is whitelisted, and updates the order status.
 - Migration `20260501000000_add_telegram_message_id_to_orders.sql` — adds `telegram_message_id` to `orders`.
+- Migration `20260519000000_add_telegram_legacy_message_id.sql` — adds `telegram_legacy_message_id` for the legacy mirror group.
+- Migration `20260519000001_add_telegram_proof_message_ids.sql` — adds `telegram_proof_message_id` and `telegram_legacy_proof_message_id` so the bot can delete the payment-proof photo alongside the order summary when moving stages.
 
 ## 1. Create the bot
 
@@ -44,10 +46,38 @@ supabase secrets set \
 
 `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected automatically.
 
+### 5b. Topic IDs (forum group)
+
+The group must be a **forum** (enable "Topics" in group settings). Create these
+five topics, then set the matching secrets:
+
+| Topic in Telegram | Env var                     | Triggered by                        |
+| ----------------- | --------------------------- | ----------------------------------- |
+| New Orders        | `TELEGRAM_TOPIC_NEW`        | Order placed on the site            |
+| To Process        | `TELEGRAM_TOPIC_CONFIRMED`  | Status set to `confirmed`           |
+| Shipped           | `TELEGRAM_TOPIC_SHIPPED`    | Status set to `shipped`             |
+| Complete          | `TELEGRAM_TOPIC_DELIVERED`  | Status set to `delivered`           |
+| Cancelled         | `TELEGRAM_TOPIC_CANCELLED`  | Status set to `cancelled`           |
+
+```bash
+supabase secrets set \
+  TELEGRAM_TOPIC_NEW="2" \
+  TELEGRAM_TOPIC_CONFIRMED="3" \
+  TELEGRAM_TOPIC_SHIPPED="4" \
+  TELEGRAM_TOPIC_DELIVERED="5" \
+  TELEGRAM_TOPIC_CANCELLED="6"
+```
+
+To find a topic's numeric ID: open the topic in Telegram Web, the URL ends in
+`/<chat>/<topic_id>`. Or post any message in the topic, then call
+`https://api.telegram.org/bot<TOKEN>/getUpdates` and read `message_thread_id`.
+Statuses without a configured topic are silently skipped (no message sent).
+
 ## 6. Deploy the functions
 
 ```bash
 supabase functions deploy telegram-notify-order
+supabase functions deploy telegram-move-order
 supabase functions deploy telegram-webhook --no-verify-jwt
 ```
 
@@ -78,8 +108,22 @@ Place a test order on the site. The group should receive:
 
 Tapping a button:
 
-- Whitelisted admin → updates `orders.order_status` to `confirmed` or `cancelled`, edits the message to show who confirmed and when.
-- Non-whitelisted user → sees a "not authorized" alert; nothing changes.
+- **Confirm** → updates the order to `confirmed` / `paid`, deletes the message
+  (and payment-proof photo) from the **new orders** topic, and reposts it in
+  the **confirmed (to process)** topic with a single "▶️ Move to Processing"
+  button.
+- **Cancel** → updates the order to `cancelled` and reposts in the **cancelled**
+  topic.
+- Subsequent stages each show one forward button: confirmed → processing →
+  shipped → delivered. The previous topic's order summary and payment-proof
+  image are deleted on every move.
+- Each reposted message includes a `By:` line showing which Telegram user (or
+  `Web Admin` for moves made from the admin UI) triggered the move.
+
+Changing the status from the admin UI (`processing` → `shipped` → `delivered`,
+etc.) calls `telegram-move-order`, which deletes the current message and reposts
+into the topic for the new status. If the new status has no `TELEGRAM_TOPIC_*`
+configured, the move is skipped silently.
 
 ## Troubleshooting
 

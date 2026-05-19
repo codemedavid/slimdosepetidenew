@@ -11,6 +11,45 @@ import {
 } from '../lib/convexMirror';
 import { trackOrderStatus, trackPaymentStatus, type OrderStatus } from '../utils/analytics';
 
+function buildOrderEmailProps(order: any) {
+  const fmt = (n: unknown) => Number(n ?? 0).toLocaleString('en-PH');
+  const items: any[] = Array.isArray(order?.order_items) ? order.order_items : [];
+  const itemsSummary = items
+    .map((i: any) => {
+      const name = i.variation_name ? `${i.product_name} — ${i.variation_name}` : i.product_name;
+      return `${i.quantity} × ${name} — ₱${Number(i.total ?? 0).toLocaleString('en-PH')}`;
+    })
+    .join('\n');
+  const subtotalNum = Number(order?.total_price ?? 0) + Number(order?.discount_applied ?? 0);
+  const finalTotalNum = Number(order?.total_price ?? 0) + Number(order?.shipping_fee ?? 0);
+  const contact = String(order?.contact_method || '');
+  return {
+    order_id: order?.id,
+    order_number: order?.order_number ?? null,
+    items_summary: itemsSummary,
+    subtotal: fmt(subtotalNum),
+    shipping_fee: fmt(order?.shipping_fee),
+    discount: fmt(order?.discount_applied),
+    promo_code: order?.promo_code || '',
+    total_price: fmt(finalTotalNum),
+    payment_method: order?.payment_method_name || '—',
+    contact_method: contact ? contact.charAt(0).toUpperCase() + contact.slice(1) : '—',
+    email: order?.customer_email ?? null,
+    customer_name: order?.customer_name ?? null,
+  };
+}
+
+async function moveOrderTelegramTopic(orderId: string, newStatus: string) {
+  try {
+    const { error } = await supabase.functions.invoke('telegram-move-order', {
+      body: { order_id: orderId, new_status: newStatus, actor_name: 'Web Admin' },
+    });
+    if (error) console.warn('telegram-move-order failed', error);
+  } catch (err) {
+    console.warn('telegram-move-order threw', err);
+  }
+}
+
 interface OrderItem {
   product_id: string;
   product_name: string;
@@ -192,20 +231,10 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ onBack }) => {
 
       if (updateError) throw updateError;
       mirrorOrderUpdateStatus(order.id, { order_status: 'confirmed', payment_status: 'paid' });
-      trackOrderStatus('confirmed', {
-        order_id: order.id,
-        order_number: order.order_number ?? null,
-        total_price: order.total_price,
-        customer_email: order.customer_email,
-        customer_name: order.customer_name,
-      });
-      trackPaymentStatus('paid', {
-        order_id: order.id,
-        order_number: order.order_number ?? null,
-        total_price: order.total_price,
-        customer_email: order.customer_email,
-        customer_name: order.customer_name,
-      });
+      moveOrderTelegramTopic(order.id, 'confirmed');
+      const emailProps = buildOrderEmailProps(order);
+      trackOrderStatus('confirmed', emailProps);
+      trackPaymentStatus('paid', { ...emailProps, payment_status: 'paid' });
 
       // Refresh orders and products
       await loadOrders();
@@ -237,14 +266,9 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ onBack }) => {
 
       if (error) throw error;
       mirrorOrderUpdateStatus(orderId, { order_status: newStatus });
+      moveOrderTelegramTopic(orderId, newStatus);
       const targetOrder = orders.find(o => o.id === orderId);
-      trackOrderStatus(newStatus as OrderStatus, {
-        order_id: orderId,
-        order_number: targetOrder?.order_number ?? null,
-        total_price: targetOrder?.total_price ?? null,
-        customer_email: targetOrder?.customer_email ?? null,
-        customer_name: targetOrder?.customer_name ?? null,
-      });
+      trackOrderStatus(newStatus as OrderStatus, buildOrderEmailProps(targetOrder));
       await loadOrders();
       if (selectedOrder?.id === orderId) {
         setSelectedOrder({ ...selectedOrder, order_status: newStatus });

@@ -1,11 +1,13 @@
 // Supabase Edge Function: telegram-notify-order
-// Sends a Telegram message to the admin group when a new order is created,
-// with an inline "Confirm Order" button that triggers telegram-webhook.
+// Sends a new-order message to the forum group's "new orders" topic and, when
+// configured, mirrors the same message into the legacy admin group.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { sendOrderEverywhere } from '../_shared/telegram.ts';
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')!;
 const TELEGRAM_GROUP_CHAT_ID = Deno.env.get('TELEGRAM_GROUP_CHAT_ID')!;
+const TELEGRAM_LEGACY_CHAT_ID = Deno.env.get('TELEGRAM_LEGACY_CHAT_ID') || undefined;
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
@@ -14,58 +16,6 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
-
-function fmtPHP(n: number) {
-  return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n || 0);
-}
-
-function escapeHtml(s: string) {
-  return String(s ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-function buildMessage(order: any): string {
-  const items = Array.isArray(order.order_items) ? order.order_items : [];
-  const lines = items.map((it: any) => {
-    const name = escapeHtml(it.product_name || 'Item');
-    const variation = it.variation_name ? ` (${escapeHtml(it.variation_name)})` : '';
-    return `• ${name}${variation} × ${it.quantity} — ${fmtPHP(it.total)}`;
-  });
-  const subtotal = Number(order.total_price || 0);
-  const shipping = Number(order.shipping_fee || 0);
-  const grand = subtotal + shipping;
-  const addr = [
-    order.shipping_address,
-    order.shipping_barangay,
-    order.shipping_city,
-    order.shipping_state,
-    order.shipping_zip_code,
-  ].filter(Boolean).map(escapeHtml).join(', ');
-
-  return [
-    `🛒 <b>New Order</b> #${escapeHtml(String(order.id).slice(0, 8))}`,
-    ``,
-    `<b>Customer:</b> ${escapeHtml(order.customer_name || '')}`,
-    `<b>Email:</b> ${escapeHtml(order.customer_email || '')}`,
-    `<b>Phone:</b> ${escapeHtml(order.customer_phone || '')}`,
-    order.contact_method ? `<b>Contact via:</b> ${escapeHtml(order.contact_method)}` : '',
-    ``,
-    `<b>Items:</b>`,
-    ...lines,
-    ``,
-    `<b>Subtotal:</b> ${fmtPHP(subtotal)}`,
-    `<b>Shipping:</b> ${fmtPHP(shipping)} ${order.shipping_location ? `(${escapeHtml(order.shipping_location)})` : ''}`,
-    `<b>Total:</b> ${fmtPHP(grand)}`,
-    ``,
-    `<b>Payment:</b> ${escapeHtml(order.payment_method_name || '—')}`,
-    `<b>Address:</b> ${addr}`,
-    order.notes ? `<b>Notes:</b> ${escapeHtml(order.notes)}` : '',
-    ``,
-    `<b>Status:</b> ${escapeHtml(order.order_status || 'new')}`,
-  ].filter(Boolean).join('\n');
-}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -87,51 +37,31 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: error?.message || 'order not found' }), { status: 404, headers: CORS });
     }
 
-    const text = buildMessage(order);
-    const reply_markup = {
-      inline_keyboard: [[
-        { text: '✅ Confirm Order', callback_data: `confirm:${order.id}` },
-        { text: '❌ Cancel', callback_data: `cancel:${order.id}` },
-      ]],
-    };
-
-    const tgRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: TELEGRAM_GROUP_CHAT_ID,
-        text,
-        parse_mode: 'HTML',
-        reply_markup,
-      }),
+    const { forum, legacy } = await sendOrderEverywhere({
+      token: TELEGRAM_BOT_TOKEN,
+      forumChatId: TELEGRAM_GROUP_CHAT_ID,
+      legacyChatId: TELEGRAM_LEGACY_CHAT_ID,
+      order,
+      status: 'new',
     });
 
-    const tgJson = await tgRes.json();
-    if (!tgJson.ok) {
-      console.error('Telegram error', tgJson);
-      return new Response(JSON.stringify({ error: 'telegram send failed', details: tgJson }), { status: 502, headers: CORS });
+    if (forum.error && legacy.error) {
+      return new Response(JSON.stringify({ error: 'telegram send failed', forum: forum.error, legacy: legacy.error }), { status: 502, headers: CORS });
     }
 
-    const messageId = tgJson.result?.message_id;
-    if (messageId) {
-      await admin.from('orders').update({ telegram_message_id: messageId }).eq('id', order.id);
+    const updates: Record<string, unknown> = {};
+    if (forum.message_id) updates.telegram_message_id = forum.message_id;
+    if (legacy.message_id) updates.telegram_legacy_message_id = legacy.message_id;
+    if (forum.proof_message_id) updates.telegram_proof_message_id = forum.proof_message_id;
+    if (legacy.proof_message_id) updates.telegram_legacy_proof_message_id = legacy.proof_message_id;
+    if (Object.keys(updates).length) {
+      await admin.from('orders').update(updates).eq('id', order.id);
     }
 
-    // Send payment proof image as a follow-up if available
-    if (order.payment_proof_url) {
-      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: TELEGRAM_GROUP_CHAT_ID,
-          photo: order.payment_proof_url,
-          caption: `Payment proof for order #${String(order.id).slice(0, 8)}`,
-          reply_to_message_id: messageId,
-        }),
-      });
-    }
-
-    return new Response(JSON.stringify({ ok: true, message_id: messageId }), { headers: { ...CORS, 'Content-Type': 'application/json' } });
+    return new Response(
+      JSON.stringify({ ok: true, forum, legacy }),
+      { headers: { ...CORS, 'Content-Type': 'application/json' } },
+    );
   } catch (e) {
     console.error(e);
     return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: CORS });
