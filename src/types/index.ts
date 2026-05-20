@@ -125,6 +125,12 @@ export interface SiteSettings {
   hero_tagline?: string;
   hero_description?: string;
   hero_accent_color?: string;
+  // Promo Popup
+  popup_enabled?: string;
+  popup_title?: string;
+  popup_description?: string;
+  popup_link?: string;
+  popup_image?: string;
 }
 
 // Cart Types

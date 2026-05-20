@@ -3,6 +3,7 @@ import { Mail, X, Sparkles, Check, ArrowRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { trackEvent, identifyUser } from '../utils/analytics';
 import { useGlobalDiscount } from '../hooks/useGlobalDiscount';
+import { useSiteSettings } from '../hooks/useSiteSettings';
 import type { GlobalDiscount } from '../types';
 
 const POPUP_DISMISSED_KEY = 'sldp_promo_popup_dismissed_at';
@@ -56,6 +57,12 @@ async function saveSubscriber(email: string, source: 'banner' | 'popup'): Promis
 
 const PromoSignup: React.FC = () => {
   const { globalDiscount } = useGlobalDiscount();
+  const { siteSettings } = useSiteSettings();
+  const popupEnabled = (siteSettings?.popup_enabled ?? 'true') !== 'false';
+  const adminPopupTitle = siteSettings?.popup_title?.trim() || '';
+  const adminPopupDescription = siteSettings?.popup_description?.trim() || '';
+  const adminPopupLink = siteSettings?.popup_link?.trim() || 'none';
+  const adminPopupImage = siteSettings?.popup_image?.trim() || '';
   const [bannerVisible, setBannerVisible] = useState(true);
   const [popupVisible, setPopupVisible] = useState(false);
   const [bannerEmail, setBannerEmail] = useState('');
@@ -70,6 +77,7 @@ const PromoSignup: React.FC = () => {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (!popupEnabled) return;
 
     const t = window.setTimeout(() => {
       setPopupVisible(true);
@@ -77,7 +85,7 @@ const PromoSignup: React.FC = () => {
     }, POPUP_DELAY_MS);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [popupEnabled]);
 
   const dismissPopup = () => {
     setPopupVisible(false);
@@ -220,7 +228,25 @@ const PromoSignup: React.FC = () => {
               <X className="w-4 h-4" />
             </button>
 
-            <div className="relative px-7 pt-10 pb-7">
+            {adminPopupImage && (
+              <a
+                href={adminPopupLink && adminPopupLink !== 'none' ? adminPopupLink : undefined}
+                onClick={() => {
+                  if (adminPopupLink && adminPopupLink !== 'none') {
+                    trackEvent('promo_popup_link_clicked', { link: adminPopupLink, ...discountPayload });
+                  }
+                }}
+                className={`block relative ${adminPopupLink && adminPopupLink !== 'none' ? 'cursor-pointer' : ''}`}
+              >
+                <img
+                  src={adminPopupImage}
+                  alt={adminPopupTitle || 'Promo'}
+                  className="w-full max-h-56 object-cover"
+                />
+              </a>
+            )}
+
+            <div className="relative px-7 pt-8 pb-7">
               {/* Eyebrow tag */}
               <div className="flex justify-center mb-5">
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-50 border border-brand-100 text-[10px] uppercase tracking-[0.22em] font-bold text-brand-700">
@@ -231,19 +257,25 @@ const PromoSignup: React.FC = () => {
 
               {/* Editorial heading */}
               <div className="text-center mb-2">
-                <h3 className="font-heading font-bold text-charcoal-900 leading-[1.05] tracking-tight">
-                  <span className="block text-3xl sm:text-4xl">Get</span>
-                  <span className="block text-5xl sm:text-6xl bg-gradient-to-br from-brand-500 to-brand-700 bg-clip-text text-transparent my-1">
-                    {discountLabel}
-                  </span>
-                  <span className="block text-xl sm:text-2xl text-charcoal-700 font-normal italic">
-                    your first order
-                  </span>
-                </h3>
+                {adminPopupTitle ? (
+                  <h3 className="font-heading font-bold text-charcoal-900 leading-[1.1] tracking-tight text-3xl sm:text-4xl">
+                    {adminPopupTitle}
+                  </h3>
+                ) : (
+                  <h3 className="font-heading font-bold text-charcoal-900 leading-[1.05] tracking-tight">
+                    <span className="block text-3xl sm:text-4xl">Get</span>
+                    <span className="block text-5xl sm:text-6xl bg-gradient-to-br from-brand-500 to-brand-700 bg-clip-text text-transparent my-1">
+                      {discountLabel}
+                    </span>
+                    <span className="block text-xl sm:text-2xl text-charcoal-700 font-normal italic">
+                      your first order
+                    </span>
+                  </h3>
+                )}
               </div>
 
               <p className="text-center text-sm text-charcoal-500 mt-4 mb-6 max-w-xs mx-auto leading-relaxed">
-                Join the SlimDose list for exclusive promo codes, restocks, and member-only deals.
+                {adminPopupDescription || 'Join the SlimDose list for exclusive promo codes, restocks, and member-only deals.'}
               </p>
 
               {popupStatus === 'success' ? (

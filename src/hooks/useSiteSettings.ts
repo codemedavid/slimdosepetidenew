@@ -36,7 +36,12 @@ export const useSiteSettings = () => {
         hero_subtext: settingsData.find(s => s.id === 'hero_subtext')?.value || 'From the Lab to You — Simplifying Science, One Dose at a Time.',
         hero_tagline: settingsData.find(s => s.id === 'hero_tagline')?.value || 'Quality-tested products. Reliable performance. Trusted by our community.',
         hero_description: settingsData.find(s => s.id === 'hero_description')?.value || 'SlimDose Peptides is your all-in-one destination for high-quality peptides, peptide pens, and the essential accessories you need for a smooth and confident wellness routine.',
-        hero_accent_color: settingsData.find(s => s.id === 'hero_accent_color')?.value || 'gold-500'
+        hero_accent_color: settingsData.find(s => s.id === 'hero_accent_color')?.value || 'gold-500',
+        popup_enabled: settingsData.find(s => s.id === 'popup_enabled')?.value || 'true',
+        popup_title: settingsData.find(s => s.id === 'popup_title')?.value || '',
+        popup_description: settingsData.find(s => s.id === 'popup_description')?.value || '',
+        popup_link: settingsData.find(s => s.id === 'popup_link')?.value || 'none',
+        popup_image: settingsData.find(s => s.id === 'popup_image')?.value || ''
       };
 
       setSiteSettings(settings);

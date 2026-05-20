@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Edit, Trash2, Save, X, ArrowLeft, TrendingUp, Package, Users, FolderOpen, CreditCard, Sparkles, Layers, Shield, RefreshCw, Warehouse, ShoppingCart, HelpCircle, MapPin, Settings, Tag, BookOpen } from 'lucide-react';
+import { Plus, Edit, Trash2, Save, X, ArrowLeft, TrendingUp, Package, Users, FolderOpen, CreditCard, Sparkles, Layers, Shield, RefreshCw, Warehouse, ShoppingCart, HelpCircle, MapPin, Settings, Tag, BookOpen, MessageSquare } from 'lucide-react';
 import type { Product, ProductBundleTier } from '../types';
 import { supabase } from '../lib/supabase';
 import { useMenu } from '../hooks/useMenu';
@@ -18,6 +18,7 @@ import PromoCodeManager from './PromoCodeManager';
 import GlobalDiscountManager from './GlobalDiscountManager';
 import GuideManager from './GuideManager';
 import SalesAnalyticsManager from './SalesAnalyticsManager';
+import PopupManager from './PopupManager';
 import { Calendar, BarChart3 } from 'lucide-react';
 const AdminDashboard: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -25,7 +26,7 @@ const AdminDashboard: React.FC = () => {
   const [loginError, setLoginError] = useState('');
   const { products, loading, addProduct, updateProduct, deleteProduct, refreshProducts } = useMenu();
   const { categories } = useCategories();
-  const [currentView, setCurrentView] = useState<'dashboard' | 'products' | 'add' | 'edit' | 'categories' | 'payments' | 'inventory' | 'orders' | 'shipping' | 'coa' | 'faq' | 'settings' | 'promo-codes' | 'global-discount' | 'guides' | 'analytics'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'products' | 'add' | 'edit' | 'categories' | 'payments' | 'inventory' | 'orders' | 'shipping' | 'coa' | 'faq' | 'settings' | 'promo-codes' | 'global-discount' | 'guides' | 'analytics' | 'popup'>('dashboard');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [managingVariationsProductId, setManagingVariationsProductId] = useState<string | null>(null);
@@ -1475,6 +1476,24 @@ const AdminDashboard: React.FC = () => {
     return <SalesAnalyticsManager onBack={() => setCurrentView('dashboard')} />;
   }
 
+  // Popup View
+  if (currentView === 'popup') {
+    return (
+      <div className="min-h-screen bg-gray-50 p-4">
+        <div className="max-w-4xl mx-auto">
+          <button
+            onClick={() => setCurrentView('dashboard')}
+            className="mb-4 text-gray-600 hover:text-brand-600 flex items-center gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Dashboard
+          </button>
+          <PopupManager />
+        </div>
+      </div>
+    );
+  }
+
   // Settings View
   if (currentView === 'settings') {
     // SiteSettingsManager doesn't seem to have onBack prop based on earlier view_file, 
@@ -1749,6 +1768,15 @@ const AdminDashboard: React.FC = () => {
                     <BookOpen className="h-4 w-4 text-purple-600" />
                   </div>
                   <span className="text-sm font-medium text-gray-900">Peptalk</span>
+                </button>
+                <button
+                  onClick={() => setCurrentView('popup')}
+                  className="w-full flex items-center gap-3 p-2 text-left hover:bg-gray-50 rounded-lg transition-all"
+                >
+                  <div className="p-1.5 bg-pink-50 rounded-lg">
+                    <MessageSquare className="h-4 w-4 text-pink-600" />
+                  </div>
+                  <span className="text-sm font-medium text-gray-900">Popup</span>
                 </button>
                 <button
                   onClick={() => setCurrentView('settings')}
