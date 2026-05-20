@@ -12,6 +12,8 @@ E-commerce storefront and admin console for research-grade peptides. Built as a 
 
 ## Features
 
+
+
 **Storefront**
 - Product catalog with categories, search, and variations (per-size pricing/stock)
 - Product detail pages with scientific data (purity, MW, CAS, sequence, storage)
