@@ -18,6 +18,7 @@ import ArticleDetail from './components/ArticleDetail';
 import ProductPage from './components/ProductPage';
 import PromoSignup from './components/PromoSignup';
 import { useMenu } from './hooks/useMenu';
+import { supabase } from './lib/supabase';
 // import { useCOAPageSetting } from './hooks/useCOAPageSetting';
 
 function MainApp() {
@@ -38,6 +39,14 @@ function MainApp() {
         cart.clearCart();
         setPaymongoNotice({ kind: 'success', orderId });
         setCurrentView('menu');
+        // Auto-tag the order as paid in admin. The webhook is the source of
+        // truth, but this fires immediately after redirect so the order shows
+        // as paid even before PayMongo's webhook lands. Idempotent server-side.
+        if (orderId) {
+          supabase.functions
+            .invoke('paymongo-verify-payment', { body: { order_id: orderId } })
+            .catch((err) => console.warn('paymongo-verify-payment failed:', err));
+        }
       } else {
         setPaymongoNotice({ kind: 'cancel', orderId });
         setCurrentView('checkout');

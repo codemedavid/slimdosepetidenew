@@ -80,6 +80,8 @@ interface Order {
   payment_method_id: string | null;
   payment_method_name: string | null;
   payment_proof_url: string | null;
+  paymongo_payment_id: string | null;
+  paymongo_payment_method_used: string | null;
   contact_method: string | null;
   order_status: string;
   payment_status: string;
@@ -595,7 +597,9 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onView, getStatusColor, ge
             </span>
             <span className={`px-2 md:px-3 py-0.5 md:py-1 rounded-full text-[10px] md:text-xs font-semibold ${order.payment_status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-gold-100 text-gold-700'
               }`}>
-              {order.payment_status === 'paid' ? '✓ Paid' : 'Pending'}
+              {order.payment_status === 'paid'
+                ? `✓ Paid${order.payment_method_name ? ` via ${order.payment_method_name}` : ''}`
+                : 'Pending'}
             </span>
           </div>
 
@@ -1094,11 +1098,25 @@ const OrderDetailsView: React.FC<OrderDetailsViewProps> = ({
           <div>
             <h3 className="font-bold text-gray-900 mb-2 md:mb-3 text-sm md:text-base">Payment Information</h3>
             <div className="bg-gray-50 rounded-lg p-3 md:p-4 space-y-1.5 md:space-y-2 text-xs md:text-sm">
-              <p><span className="font-semibold">Method:</span> {order.payment_method_name || 'N/A'}</p>
+              <p>
+                <span className="font-semibold">Method:</span> {order.payment_method_name || 'N/A'}
+                {order.paymongo_payment_method_used && (
+                  <span className="ml-1 text-gray-500">
+                    ({order.paymongo_payment_method_used.replace(/_/g, ' ').toUpperCase()})
+                  </span>
+                )}
+              </p>
+              {order.paymongo_payment_id && (
+                <p className="text-[10px] md:text-xs text-gray-500 break-all">
+                  <span className="font-semibold">PayMongo Payment ID:</span> {order.paymongo_payment_id}
+                </p>
+              )}
               <p className="flex items-center gap-2 flex-wrap"><span className="font-semibold">Status:</span>
                 <span className={`px-2 py-1 rounded-full text-[10px] md:text-xs font-semibold ${order.payment_status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-gold-100 text-gold-700'
                   }`}>
-                  {order.payment_status === 'paid' ? 'Paid' : 'Pending'}
+                  {order.payment_status === 'paid'
+                    ? `Paid${order.payment_method_name ? ` via ${order.payment_method_name}` : ''}`
+                    : 'Pending'}
                 </span>
               </p>
             </div>
