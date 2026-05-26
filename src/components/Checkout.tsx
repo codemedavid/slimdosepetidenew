@@ -517,7 +517,7 @@ ${paymentMethod ? `Account: ${paymentMethod.account_number}` : ''}
 ${paymentProofUrl ? 'Screenshot attached to order.' : 'Pending'}
 
 📱 CONTACT METHOD
-Telegram: https://t.me/slimdosedvo
+Telegram: https://t.me/slimdose_mnl
 
 📋 ORDER ID: ${orderData.order_number || orderData.id}
 
@@ -538,7 +538,7 @@ Please confirm this order. Thank you!
       // Open contact method based on selection
       // Using m.me link with Page ID to open Messenger directly
       const contactUrl = contactMethod === 'messenger'
-        ? `https://t.me/slimdosedvo`
+        ? `https://t.me/slimdose_mnl`
         : null;
 
       if (contactUrl) {
@@ -594,7 +594,7 @@ Please confirm this order. Thank you!
 
   const handleOpenContact = () => {
     const contactUrl = contactMethod === 'messenger'
-      ? `https://t.me/slimdosedvo`
+      ? `https://t.me/slimdose_mnl`
       : null;
 
     if (contactUrl) {
@@ -1310,7 +1310,7 @@ Please confirm this order. Thank you!
                     <MessageCircle className="w-6 h-6 text-gold-600" />
                     <div className="text-left">
                       <p className="font-semibold text-navy-900">Telegram</p>
-                      <p className="text-sm text-gray-500">@slimdosedvo</p>
+                      <p className="text-sm text-gray-500">@slimdose_mnl</p>
                     </div>
                   </div>
                   {contactMethod === 'messenger' && (

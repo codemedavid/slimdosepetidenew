@@ -37,7 +37,7 @@ const FAQ: React.FC = () => {
         ? faqs.filter(faq => faq.category === activeCategory)
         : faqs;
 
-    const telegramUrl = `https://t.me/slimdosedvo`;
+    const telegramUrl = `https://t.me/slimdose_mnl`;
 
     if (loading) {
         return (

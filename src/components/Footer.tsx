@@ -6,10 +6,6 @@ const Footer: React.FC = () => {
   const currentYear = new Date().getFullYear();
   const { coaPageEnabled } = useCOAPageSetting();
 
-  // Contact Links
-  //   const whatsappMessage = encodeURIComponent('Hi! I would like to inquire about your products.');
-  //   const whatsappUrl = `https://wa.me/639062349763?text=${whatsappMessage}`;
-
   return (
     <footer className="bg-white border-t border-gray-100 pt-12 pb-6">
       <div className="container mx-auto px-4">
@@ -67,7 +63,7 @@ const Footer: React.FC = () => {
               FAQ
             </a>
             <a
-              href="https://t.me/+fGtShIUkbB84YzZl"
+              href="https://t.me/slimdose_mnl"
               target="_blank"
               rel="noopener noreferrer"
               className="text-gray-500 hover:text-[#0088cc] transition-colors flex items-center gap-2 text-sm font-medium"
