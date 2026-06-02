@@ -294,9 +294,9 @@ const Cart: React.FC<CartProps> = ({
                       ₱{finalTotal.toLocaleString('en-PH', { minimumFractionDigits: 0 })}
                     </span>
                   </div>
-                  {pricing.hasBundleDiscount && (
+                  {(pricing.hasBundleDiscount || pricing.hasItemDiscount) && (
                     <p className="text-xs text-green-700 mt-1 text-right font-medium">
-                      Bundle discount applied — promo codes can't be combined.
+                      A discount is already applied — promo codes can't be combined.
                     </p>
                   )}
                   <p className="text-xs text-gray-500 mt-1 text-right">+ Shipping fee (calculated on checkout)</p>

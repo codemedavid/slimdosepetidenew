@@ -36,6 +36,8 @@ const Checkout: React.FC<CheckoutProps> = ({ cartItems, refreshCartPrices, price
   const itemDiscountSavings = pricing.itemDiscountSavings;
   const hasItemDiscount = pricing.hasItemDiscount;
   const originalSubtotal = pricing.originalSubtotal;
+  // Any existing discount (item/sitewide sale or bundle) blocks promo codes — no stacking.
+  const hasExistingDiscount = hasItemDiscount || hasBundleDiscount;
 
   useEffect(() => {
     refreshCartPrices();
@@ -118,16 +120,16 @@ const Checkout: React.FC<CheckoutProps> = ({ cartItems, refreshCartPrices, price
   // Calculate final total (Subtotal + Shipping - Discount)
   const finalTotal = Math.max(0, totalPrice + shippingFee - discountAmount);
 
-  // Auto-clear promo if a bundle discount becomes active
+  // Auto-clear promo if any other discount becomes active — discounts don't stack.
   useEffect(() => {
-    if (hasBundleDiscount && appliedPromo) {
+    if (hasExistingDiscount && appliedPromo) {
       setAppliedPromo(null);
       setDiscountAmount(0);
       setPromoCode('');
       setPromoSuccess('');
-      setPromoError('Bundle discount is active — promo codes can\'t be combined.');
+      setPromoError('A discount is already applied — promo codes can\'t be combined.');
     }
-  }, [hasBundleDiscount, appliedPromo]);
+  }, [hasExistingDiscount, appliedPromo]);
 
   // Handle Promo Code Application
   const handleApplyPromoCode = async () => {
@@ -136,8 +138,8 @@ const Checkout: React.FC<CheckoutProps> = ({ cartItems, refreshCartPrices, price
     setAppliedPromo(null);
     setDiscountAmount(0);
 
-    if (hasBundleDiscount) {
-      setPromoError('Bundle discount is active — promo codes can\'t be combined.');
+    if (hasExistingDiscount) {
+      setPromoError('A discount is already applied — promo codes can\'t be combined.');
       return;
     }
 
@@ -981,9 +983,9 @@ Please confirm this order. Thank you!
                       <Tag className="w-3.5 h-3.5 text-gold-600" />
                       Have a promo code?
                     </p>
-                    {hasBundleDiscount && (
+                    {hasExistingDiscount && (
                       <p className="text-xs text-amber-700 mb-2 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-                        Bundle discount is active — promo codes can't be combined.
+                        A discount is already applied — promo codes can't be combined.
                       </p>
                     )}
                     <div className="flex gap-2">
@@ -993,7 +995,7 @@ Please confirm this order. Thank you!
                         onChange={(e) => setPromoCode(e.target.value)}
                         placeholder="Enter code"
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gold-400 focus:border-transparent outline-none uppercase disabled:bg-gray-100"
-                        disabled={!!appliedPromo || isApplyingPromo || hasBundleDiscount}
+                        disabled={!!appliedPromo || isApplyingPromo || hasExistingDiscount}
                       />
                       {appliedPromo ? (
                         <button
@@ -1010,7 +1012,7 @@ Please confirm this order. Thank you!
                       ) : (
                         <button
                           onClick={handleApplyPromoCode}
-                          disabled={!promoCode || isApplyingPromo || hasBundleDiscount}
+                          disabled={!promoCode || isApplyingPromo || hasExistingDiscount}
                           className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-medium hover:bg-navy-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
                           {isApplyingPromo ? (
