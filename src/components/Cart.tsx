@@ -77,6 +77,17 @@ const Cart: React.FC<CartProps> = ({
 
   const finalTotal = pricing.subtotal;
 
+  // Per-item stock availability (kept live via the cart's realtime refresh).
+  const itemAvailability = cartItems.map((item) => {
+    const stock = item.variation ? item.variation.stock_quantity : item.product.stock_quantity;
+    return {
+      stock,
+      outOfStock: stock <= 0,
+      insufficient: stock > 0 && item.quantity > stock,
+    };
+  });
+  const hasUnavailableItems = itemAvailability.some((a) => a.outOfStock || a.insufficient);
+
   return (
     <div className="min-h-screen bg-white py-6 md:py-8">
       <div className="container mx-auto px-3 md:px-4">
@@ -126,10 +137,14 @@ const Cart: React.FC<CartProps> = ({
           <div className="lg:col-span-2 space-y-3 md:space-y-4">
             {cartItems.map((item, index) => {
               const line = pricing.lines[index];
+              const availability = itemAvailability[index];
+              const itemUnavailable = availability.outOfStock || availability.insufficient;
               return (
               <div
                 key={index}
-                className="bg-white backdrop-blur-sm rounded-lg shadow-lg hover:shadow-xl p-4 md:p-6 transition-all animate-fadeIn border border-gray-200 hover:border-navy-700"
+                className={`bg-white backdrop-blur-sm rounded-lg shadow-lg hover:shadow-xl p-4 md:p-6 transition-all animate-fadeIn border ${
+                  itemUnavailable ? 'border-red-300 ring-1 ring-red-200' : 'border-gray-200 hover:border-navy-700'
+                }`}
               >
                 <div className="flex gap-4 md:gap-6">
                   <div className="w-20 h-20 md:w-24 md:h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex-shrink-0 flex items-center justify-center overflow-hidden shadow-md border border-gray-300">
@@ -170,6 +185,17 @@ const Cart: React.FC<CartProps> = ({
                             Bundle: {Number(line.appliedTier.discount_percentage)}% OFF
                           </div>
                         )}
+                        {availability.outOfStock ? (
+                          <div className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] md:text-xs font-bold bg-red-100 text-red-700">
+                            <X className="w-3 h-3" />
+                            Out of stock — please remove
+                          </div>
+                        ) : availability.insufficient ? (
+                          <div className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] md:text-xs font-bold bg-amber-100 text-amber-700">
+                            <Info className="w-3 h-3" />
+                            Only {availability.stock} left — reduce quantity
+                          </div>
+                        ) : null}
                       </div>
                       <button
                         onClick={() => removeFromCart(index)}
@@ -303,9 +329,15 @@ const Cart: React.FC<CartProps> = ({
                 </div>
               </div>
 
+              {hasUnavailableItems && (
+                <p className="mb-3 text-xs md:text-sm text-red-600 font-medium text-center bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  Some items are out of stock or exceed available stock. Please update your cart to continue.
+                </p>
+              )}
               <button
                 onClick={onCheckout}
-                className="w-full bg-navy-900 hover:bg-navy-800 text-white py-3 md:py-4 rounded-lg font-semibold text-sm md:text-base shadow-lg hover:shadow-gold-glow transform hover:scale-105 transition-all mb-3 flex items-center justify-center gap-2 border border-navy-900/20"
+                disabled={hasUnavailableItems}
+                className="w-full bg-navy-900 hover:bg-navy-800 text-white py-3 md:py-4 rounded-lg font-semibold text-sm md:text-base shadow-lg hover:shadow-gold-glow transform hover:scale-105 transition-all mb-3 flex items-center justify-center gap-2 border border-navy-900/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:shadow-lg"
               >
                 <CreditCard className="w-5 h-5" />
                 Proceed to Checkout

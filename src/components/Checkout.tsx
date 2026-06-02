@@ -258,6 +258,56 @@ const Checkout: React.FC<CheckoutProps> = ({ cartItems, refreshCartPrices, price
 
     const paymentMethod = paymentMethods.find(pm => pm.id === selectedPaymentMethod);
 
+    // Re-check live stock right before placing the order so sold-out items
+    // (or items that ran out while in the cart) can't be checked out.
+    try {
+      const variationIds = cartItems.map((i) => i.variation?.id).filter(Boolean) as string[];
+      const productIds = cartItems.filter((i) => !i.variation).map((i) => i.product.id);
+
+      const [variationRes, productRes] = await Promise.all([
+        variationIds.length
+          ? supabase.from('product_variations').select('id, stock_quantity').in('id', variationIds)
+          : Promise.resolve({ data: [], error: null }),
+        productIds.length
+          ? supabase.from('products').select('id, stock_quantity').in('id', productIds)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+
+      if (variationRes.error || productRes.error) {
+        console.error('Stock check failed:', variationRes.error || productRes.error);
+        alert('Could not verify stock availability. Please try again.');
+        return;
+      }
+
+      const variationStock = new Map((variationRes.data || []).map((v: any) => [v.id, v.stock_quantity]));
+      const productStock = new Map((productRes.data || []).map((p: any) => [p.id, p.stock_quantity]));
+
+      const insufficient = cartItems.filter((item) => {
+        const available = item.variation
+          ? variationStock.get(item.variation.id)
+          : productStock.get(item.product.id);
+        return available == null || available < item.quantity;
+      });
+
+      if (insufficient.length > 0) {
+        const lines = insufficient
+          .map((item) => {
+            const available = item.variation
+              ? variationStock.get(item.variation.id)
+              : productStock.get(item.product.id);
+            const name = item.variation ? `${item.product.name} — ${item.variation.name}` : item.product.name;
+            return `• ${name} (only ${available ?? 0} left)`;
+          })
+          .join('\n');
+        alert(`Sorry, some items are no longer available in the quantity you selected:\n\n${lines}\n\nPlease update your cart and try again.`);
+        return;
+      }
+    } catch (stockErr) {
+      console.error('Stock check error:', stockErr);
+      alert('Could not verify stock availability. Please try again.');
+      return;
+    }
+
     try {
       // 1. Upload Payment Proof First (manual methods only)
       let paymentProofUrl = null;

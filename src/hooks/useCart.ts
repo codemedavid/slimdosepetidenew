@@ -316,6 +316,42 @@ export function useCart() {
     return changed;
   }, [cartItems]);
 
+  // Keep the latest refreshCartPrices in a ref so the realtime subscription
+  // (set up once) always calls the current version without re-subscribing.
+  const refreshRef = useRef(refreshCartPrices);
+  useEffect(() => {
+    refreshRef.current = refreshCartPrices;
+  }, [refreshCartPrices]);
+
+  // Live updates: re-hydrate the cart whenever any product/variation changes
+  // (e.g. an item sells out or an admin sets stock to 0) so the cart reflects
+  // real stock without the user reopening it.
+  useEffect(() => {
+    if (!hydrated) return;
+    const channelId = `cart-stock-realtime-${Date.now()}`;
+    const channel = supabase
+      .channel(channelId)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'products' },
+        () => refreshRef.current()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'product_variations' },
+        () => refreshRef.current()
+      )
+      .subscribe();
+
+    const handleFocus = () => refreshRef.current();
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [hydrated]);
+
   const dismissPriceUpdateNotice = () => setPricesUpdatedAt(null);
 
   return {
