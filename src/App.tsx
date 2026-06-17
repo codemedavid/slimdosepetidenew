@@ -18,7 +18,9 @@ import ArticleDetail from './components/ArticleDetail';
 import ProductPage from './components/ProductPage';
 import PromoSignup from './components/PromoSignup';
 import { useMenu } from './hooks/useMenu';
+
 import { supabase } from './lib/supabase';
+
 // import { useCOAPageSetting } from './hooks/useCOAPageSetting';
 
 function MainApp() {
