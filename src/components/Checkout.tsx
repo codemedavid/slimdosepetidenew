@@ -371,6 +371,18 @@ const Checkout: React.FC<CheckoutProps> = ({ cartItems, refreshCartPrices, price
       if (orderError) {
         console.error('❌ Error saving order:', orderError);
 
+        // Server-side price validation rejected the order (stale cart or tampered
+        // prices). Re-sync the cart to the current prices and ask the user to retry.
+        if (orderError.message?.includes('PRICE_CHANGED')) {
+          await refreshCartPrices();
+          const detail = orderError.message.split('PRICE_CHANGED:').pop()?.trim();
+          alert(
+            `${detail || 'Some prices in your cart have changed.'}\n\n` +
+            `Your cart has been updated to the latest prices. Please review your order and place it again.`
+          );
+          return;
+        }
+
         // Provide helpful error message if table doesn't exist
         let errorMessage = orderError.message;
         if (orderError.message?.includes('Could not find the table') ||

@@ -448,7 +448,7 @@ const AdminDashboard: React.FC = () => {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === 'SLMDOSE2026') {
+    if (password === 'SDPep2026*') {
       setIsAuthenticated(true);
       setLoginError('');
     } else {

@@ -18,6 +18,23 @@ const getDateBoundary = (value: string | undefined, boundary: 'start' | 'end') =
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
+// An individual product discount is only valid when the flag is on AND the
+// current time is within the configured start/end window. Mirrors the global
+// discount date logic so a discount that has ended by date stops applying even
+// if the admin left `discount_active` = true in the DB.
+const isProductDiscountActive = (product: Product) => {
+  if (!product.discount_active || product.discount_price === null) return false;
+
+  const now = new Date();
+  const startDate = getDateBoundary(product.discount_start_date ?? undefined, 'start');
+  const endDate = getDateBoundary(product.discount_end_date ?? undefined, 'end');
+
+  if (startDate && startDate > now) return false;
+  if (endDate && endDate < now) return false;
+
+  return true;
+};
+
 const isGlobalDiscountActive = (globalDiscount?: GlobalDiscount | null) => {
   if (!globalDiscount?.active) return false;
 
@@ -59,7 +76,7 @@ export const resolveProductPricing = (
   const originalPrice = variation?.price ?? product.base_price;
   const individualPrice = variation
     ? (variation.discount_active && variation.discount_price !== null ? variation.discount_price : variation.price)
-    : (product.discount_active && product.discount_price !== null ? product.discount_price : product.base_price);
+    : (isProductDiscountActive(product) ? (product.discount_price as number) : product.base_price);
 
   const hasIndividualDiscount = individualPrice < originalPrice;
   const globalResult = getGlobalDiscountedPrice(originalPrice, product.id, globalDiscount);
