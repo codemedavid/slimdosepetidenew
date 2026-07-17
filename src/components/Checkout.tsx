@@ -108,11 +108,12 @@ const Checkout: React.FC<CheckoutProps> = ({ cartItems, refreshCartPrices, price
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [step]);
 
-  React.useEffect(() => {
-    if (!selectedPaymentMethod) {
-      setSelectedPaymentMethod(PAYMONGO_METHOD_ID);
-    }
-  }, [selectedPaymentMethod]);
+  // PayMongo disabled for now — no longer auto-selected as the default method.
+  // React.useEffect(() => {
+  //   if (!selectedPaymentMethod) {
+  //     setSelectedPaymentMethod(PAYMONGO_METHOD_ID);
+  //   }
+  // }, [selectedPaymentMethod]);
 
   // Calculate shipping fee based on location (uses dynamic fees from database)
   const shippingFee = shippingLocation ? getShippingFee(shippingLocation) : 0;
@@ -1267,7 +1268,7 @@ Please confirm this order. Thank you!
               </h2>
 
               <div className="grid grid-cols-1 gap-3 mb-6">
-                {/* PayMongo option (cards / e-wallets) */}
+                {/* PayMongo option (cards / e-wallets) — disabled for now, not removed.
                 <div
                   className={`rounded-lg border-2 transition-all overflow-hidden ${isPaymongoSelected
                     ? 'border-navy-900'
@@ -1304,6 +1305,7 @@ Please confirm this order. Thank you!
                     </div>
                   )}
                 </div>
+                */}
 
                 {paymentMethods.map((method) => (
                   <button

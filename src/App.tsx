@@ -28,38 +28,39 @@ function MainApp() {
   const { menuItems, loading: menuLoading, refreshProducts } = useMenu();
   const [currentView, setCurrentView] = React.useState<'menu' | 'cart' | 'checkout'>('menu');
   const [selectedCategory, setSelectedCategory] = React.useState<string>('all');
-  const [paymongoNotice, setPaymongoNotice] = React.useState<
-    { kind: 'success' | 'cancel'; orderId: string | null } | null
-  >(null);
+  // PayMongo disabled for now — redirect-notice handling commented out, not removed.
+  // const [paymongoNotice, setPaymongoNotice] = React.useState<
+  //   { kind: 'success' | 'cancel'; orderId: string | null } | null
+  // >(null);
 
-  React.useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const result = params.get('paymongo');
-    if (result === 'success' || result === 'cancel') {
-      const orderId = params.get('order_id');
-      if (result === 'success') {
-        cart.clearCart();
-        setPaymongoNotice({ kind: 'success', orderId });
-        setCurrentView('menu');
-        // Auto-tag the order as paid in admin. The webhook is the source of
-        // truth, but this fires immediately after redirect so the order shows
-        // as paid even before PayMongo's webhook lands. Idempotent server-side.
-        if (orderId) {
-          supabase.functions
-            .invoke('paymongo-verify-payment', { body: { order_id: orderId } })
-            .catch((err) => console.warn('paymongo-verify-payment failed:', err));
-        }
-      } else {
-        setPaymongoNotice({ kind: 'cancel', orderId });
-        setCurrentView('checkout');
-      }
-      params.delete('paymongo');
-      params.delete('order_id');
-      const next = window.location.pathname + (params.toString() ? `?${params}` : '');
-      window.history.replaceState({}, '', next);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // React.useEffect(() => {
+  //   const params = new URLSearchParams(window.location.search);
+  //   const result = params.get('paymongo');
+  //   if (result === 'success' || result === 'cancel') {
+  //     const orderId = params.get('order_id');
+  //     if (result === 'success') {
+  //       cart.clearCart();
+  //       setPaymongoNotice({ kind: 'success', orderId });
+  //       setCurrentView('menu');
+  //       // Auto-tag the order as paid in admin. The webhook is the source of
+  //       // truth, but this fires immediately after redirect so the order shows
+  //       // as paid even before PayMongo's webhook lands. Idempotent server-side.
+  //       if (orderId) {
+  //         supabase.functions
+  //           .invoke('paymongo-verify-payment', { body: { order_id: orderId } })
+  //           .catch((err) => console.warn('paymongo-verify-payment failed:', err));
+  //       }
+  //     } else {
+  //       setPaymongoNotice({ kind: 'cancel', orderId });
+  //       setCurrentView('checkout');
+  //     }
+  //     params.delete('paymongo');
+  //     params.delete('order_id');
+  //     const next = window.location.pathname + (params.toString() ? `?${params}` : '');
+  //     window.history.replaceState({}, '', next);
+  //   }
+  //   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, []);
 
   const handleViewChange = (view: 'menu' | 'cart' | 'checkout') => {
     setCurrentView(view);
@@ -90,6 +91,7 @@ function MainApp() {
         <SubNav selectedCategory={selectedCategory} onCategoryClick={handleCategoryClick} />
       )}
 
+      {/* PayMongo disabled for now — redirect notice banner commented out, not removed.
       {paymongoNotice && (
         <div className={`px-4 py-3 text-sm md:text-base font-medium flex items-center justify-between gap-3 ${
           paymongoNotice.kind === 'success'
@@ -110,6 +112,7 @@ function MainApp() {
           </button>
         </div>
       )}
+      */}
 
       <main className="flex-grow">
         {currentView === 'menu' && (
