@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Package } from 'lucide-react';
 import type { Product, ProductVariation, GlobalDiscount } from '../types';
 import { resolveProductPricing } from '../utils/pricing';
+import { optimizedImageUrl } from '../lib/imagekit';
 
 interface MenuItemCardProps {
   product: Product;
@@ -47,7 +48,9 @@ const MenuItemCard: React.FC<MenuItemCardProps> = ({
       <div className="relative aspect-square overflow-hidden bg-cream-100">
         {product.image_url && !imageError ? (
           <img
-            src={product.image_url}
+            src={optimizedImageUrl(product.image_url, 320)}
+            loading="lazy"
+            decoding="async"
             alt={product.name}
             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
             onError={() => setImageError(true)}

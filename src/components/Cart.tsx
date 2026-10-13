@@ -4,6 +4,7 @@ import type { CartItem } from '../types';
 import { useBundleTiers } from '../hooks/useBundleTiers';
 import { useGlobalDiscount } from '../hooks/useGlobalDiscount';
 import { computeCartPricing } from '../utils/pricing';
+import { optimizedImageUrl } from '../lib/imagekit';
 
 interface CartProps {
   cartItems: CartItem[];
@@ -150,7 +151,9 @@ const Cart: React.FC<CartProps> = ({
                   <div className="w-20 h-20 md:w-24 md:h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex-shrink-0 flex items-center justify-center overflow-hidden shadow-md border border-gray-300">
                     {item.product.image_url ? (
                       <img
-                        src={item.product.image_url}
+                        src={optimizedImageUrl(item.product.image_url, 96)}
+                        loading="lazy"
+                        decoding="async"
                         alt={item.product.name}
                         className="w-full h-full object-cover"
                       />

@@ -23,6 +23,7 @@ import {
     Underline
 } from 'lucide-react';
 import ImageUpload from './ImageUpload';
+import { optimizedImageUrl } from '../lib/imagekit';
 
 interface Article {
     id: string;
@@ -578,7 +579,7 @@ export default function GuideManager() {
                                                         {isSelected && <Check className="w-3 h-3 text-white" />}
                                                     </div>
                                                     {product.image_url && (
-                                                        <img src={product.image_url} alt="" className="w-8 h-8 rounded object-cover shrink-0" />
+                                                        <img src={optimizedImageUrl(product.image_url, 32)} alt="" className="w-8 h-8 rounded object-cover shrink-0" loading="lazy" decoding="async" />
                                                     )}
                                                     <div className="flex-1 min-w-0">
                                                         <p className="text-sm font-medium text-gray-900 truncate">{product.name}</p>

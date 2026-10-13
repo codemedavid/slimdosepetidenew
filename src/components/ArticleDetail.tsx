@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { ArrowLeft, Calendar, User, ShoppingCart, Package, Check } from 'lucide-react';
 import { useGlobalDiscount } from '../hooks/useGlobalDiscount';
 import { getGlobalDiscountedPrice } from '../utils/pricing';
+import { optimizedImageUrl } from '../lib/imagekit';
 
 interface Article {
     id: string;
@@ -281,7 +282,7 @@ export default function ArticleDetail() {
             {article.cover_image && (
                 <div className="relative w-full h-64 md:h-96 bg-gray-200">
                     <img
-                        src={article.cover_image}
+                        src={optimizedImageUrl(article.cover_image, 1024)}
                         alt={article.title}
                         className="w-full h-full object-cover"
                     />
@@ -348,7 +349,9 @@ export default function ArticleDetail() {
                                         <div className="flex items-center gap-4 p-4">
                                             {product.image_url ? (
                                                 <img
-                                                    src={product.image_url}
+                                                    src={optimizedImageUrl(product.image_url, 80)}
+                                                    loading="lazy"
+                                                    decoding="async"
                                                     alt={product.name}
                                                     className="w-20 h-20 rounded-lg object-cover shrink-0"
                                                 />

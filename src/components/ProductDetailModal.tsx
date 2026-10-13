@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import type { Product, ProductVariation, GlobalDiscount, ProductBundleTier, Protocol } from '../types';
 import { resolveProductPricing, pickBundleTier } from '../utils/pricing';
+import { optimizedImageUrl } from '../lib/imagekit';
 
 interface ProductDetailModalProps {
   product: Product;
@@ -144,7 +145,7 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClos
           <div className="rounded-2xl bg-cream-100 border border-charcoal-100 p-6 sm:p-8 flex items-center justify-center aspect-[4/3] sm:aspect-[16/10]">
             {product.image_url && !imageError ? (
               <img
-                src={product.image_url}
+                src={optimizedImageUrl(product.image_url, 640)}
                 alt={product.name}
                 className="max-h-full max-w-full object-contain"
                 onError={() => setImageError(true)}
@@ -352,7 +353,7 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClos
                               style={{ zIndex: idx }}
                             >
                               {product.image_url ? (
-                                <img src={product.image_url} alt="" className="w-full h-full object-cover" />
+                                <img src={optimizedImageUrl(product.image_url, 80)} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                               ) : (
                                 <Package className="w-5 h-5 text-charcoal-300" />
                               )}
@@ -470,7 +471,9 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClos
                 />
               ) : (
                 <img
-                  src={coaUrl}
+                  src={optimizedImageUrl(coaUrl, 640, 90)}
+                  loading="lazy"
+                  decoding="async"
                   alt="Certificate of Analysis"
                   className="w-full max-h-[520px] object-contain bg-charcoal-50"
                 />
@@ -525,7 +528,9 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClos
                     )}
                     {p.image_url && (
                       <img
-                        src={p.image_url}
+                        src={optimizedImageUrl(p.image_url, 480)}
+                        loading="lazy"
+                        decoding="async"
                         alt={p.name}
                         className="mt-3 w-full max-h-80 object-contain rounded-lg border border-charcoal-100"
                       />

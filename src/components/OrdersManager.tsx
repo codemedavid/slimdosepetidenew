@@ -10,6 +10,7 @@ import {
   mirrorVariationAdjustStock,
 } from '../lib/convexMirror';
 import { trackOrderStatus, trackPaymentStatus, type OrderStatus } from '../utils/analytics';
+import { optimizedImageUrl } from '../lib/imagekit';
 
 function buildOrderEmailProps(order: any) {
   const fmt = (n: unknown) => Number(n ?? 0).toLocaleString('en-PH');
@@ -1077,7 +1078,9 @@ const OrderDetailsView: React.FC<OrderDetailsViewProps> = ({
               </h3>
               <div className="bg-gray-50 rounded-lg p-3 md:p-4">
                 <img
-                  src={order.payment_proof_url}
+                  src={optimizedImageUrl(order.payment_proof_url, 800, 85)}
+                  loading="lazy"
+                  decoding="async"
                   alt="Payment proof"
                   className="max-w-full h-auto rounded-lg border border-gray-300"
                   onError={(e) => {

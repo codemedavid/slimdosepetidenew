@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { cachedQuery } from '../lib/queryCache';
 import { SiteSettings, SiteSetting } from '../types';
 import { mirrorSiteSettingUpsert, mirrorSiteSettingsUpsertMany } from '../lib/convexMirror';
 
@@ -13,14 +14,14 @@ export const useSiteSettings = () => {
       setLoading(true);
       setError(null);
 
-      const { data, error } = await supabase
-        .from('site_settings')
-        .select('*')
-        .order('id');
-
-      if (error) throw error;
-
-      const settingsData = data || [];
+      const settingsData = await cachedQuery('site_settings', async () => {
+        const { data, error } = await supabase
+          .from('site_settings')
+          .select('*')
+          .order('id');
+        if (error) throw error;
+        return (data || []) as SiteSetting[];
+      });
 
       // Transform the data into a more usable format
       const settings: SiteSettings = {

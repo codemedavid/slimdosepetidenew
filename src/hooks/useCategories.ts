@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { cachedQuery } from '../lib/queryCache';
 import {
   mirrorCategoryCreate,
   mirrorCategoryDelete,
@@ -25,15 +26,17 @@ export const useCategories = () => {
     try {
       setLoading(true);
       
-      const { data, error: fetchError } = await supabase
-        .from('categories')
-        .select('*')
-        .eq('active', true)
-        .order('sort_order', { ascending: true });
+      const data = await cachedQuery('categories', async () => {
+        const { data, error: fetchError } = await supabase
+          .from('categories')
+          .select('*')
+          .eq('active', true)
+          .order('sort_order', { ascending: true });
+        if (fetchError) throw fetchError;
+        return (data || []) as Category[];
+      });
 
-      if (fetchError) throw fetchError;
-
-      setCategories(data || []);
+      setCategories(data);
       setError(null);
     } catch (err) {
       console.error('Error fetching categories:', err);
@@ -155,41 +158,10 @@ export const useCategories = () => {
     }
   };
 
+  // Categories are shared through lib/queryCache, so the header, sub-nav and
+  // mobile nav make one request instead of one each (no realtime/focus refetch).
   useEffect(() => {
     fetchCategories();
-
-    // Set up real-time subscription for category changes.
-    // Unique channel name per mount avoids "cannot add postgres_changes
-    // callbacks after subscribe()" when React StrictMode double-mounts.
-    const channelName = `categories-changes-${Math.random().toString(36).slice(2)}`;
-    const categoriesChannel = supabase
-      .channel(channelName)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'categories'
-        },
-        (payload) => {
-          console.log('Category changed:', payload);
-          fetchCategories();
-        }
-      )
-      .subscribe();
-
-    // Refetch data when window regains focus
-    const handleFocus = () => {
-      fetchCategories();
-    };
-
-    window.addEventListener('focus', handleFocus);
-
-    // Cleanup subscriptions on unmount
-    return () => {
-      supabase.removeChannel(categoriesChannel);
-      window.removeEventListener('focus', handleFocus);
-    };
   }, []);
 
   return {

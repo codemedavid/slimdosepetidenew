@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { cachedQuery, invalidateCache } from '../lib/queryCache';
 import type { GlobalDiscount } from '../types';
 import { getGlobalDiscountedPrice } from '../utils/pricing';
 import {
@@ -14,40 +15,26 @@ export function useGlobalDiscount() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Mounted by several components — lib/queryCache makes that one request.
     fetchGlobalDiscount();
-
-    const channelName = `global-discounts-realtime-${Math.random().toString(36).slice(2)}`;
-    const channel = supabase
-      .channel(channelName)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'global_discounts' },
-        () => fetchGlobalDiscount()
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, []);
 
   const fetchGlobalDiscount = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('global_discounts')
-        .select('*')
-        .eq('active', true)
-        .order('created_at', { ascending: false });
+      const data = await cachedQuery('global_discounts:active', async () => {
+        const { data, error } = await supabase
+          .from('global_discounts')
+          .select('*')
+          .eq('active', true)
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        return (data || []) as GlobalDiscount[];
+      });
 
-      if (error) {
-        // Table may not exist yet — fail silently
-        setGlobalDiscount(null);
-        return;
-      }
-
+      // Date window is checked on every read so a cached list still expires on time.
       const now = new Date();
-      const activeDiscount = (data as GlobalDiscount[] | null)?.find(discount => {
+      const activeDiscount = data.find(discount => {
         if (discount.start_date && new Date(discount.start_date) > now) return false;
         if (discount.end_date && new Date(discount.end_date) < now) return false;
         return true;
@@ -91,6 +78,7 @@ export function useGlobalDiscountAdmin() {
     if (!error && data) {
       setDiscounts(data as GlobalDiscount[]);
     }
+    invalidateCache('global_discounts');
     setLoading(false);
   };
 

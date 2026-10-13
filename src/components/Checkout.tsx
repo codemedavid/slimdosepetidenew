@@ -12,6 +12,7 @@ import { useBundleTiers } from '../hooks/useBundleTiers';
 import { useGlobalDiscount } from '../hooks/useGlobalDiscount';
 import { computeCartPricing } from '../utils/pricing';
 import { trackOrderStatus, identifyUser } from '../utils/analytics';
+import { optimizedImageUrl } from '../lib/imagekit';
 
 interface CheckoutProps {
   cartItems: CartItem[];
@@ -1345,7 +1346,7 @@ Please confirm this order. Thank you!
                     <div className="flex justify-center">
                       <div className="bg-white p-4 rounded-lg">
                         <img
-                          src={paymentMethodInfo.qr_code_url}
+                          src={optimizedImageUrl(paymentMethodInfo.qr_code_url, 240, 90)}
                           alt="Payment QR Code"
                           className="w-48 h-48 object-contain"
                         />

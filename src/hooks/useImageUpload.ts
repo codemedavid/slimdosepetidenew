@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { isImageKitEnabled, isImageKitUrl, uploadToImageKit } from '../lib/imagekit';
 
 export const useImageUpload = (folder: string = 'menu-images') => {
   const [uploading, setUploading] = useState(false);
@@ -91,9 +92,6 @@ export const useImageUpload = (folder: string = 'menu-images') => {
         });
       }, 100);
 
-      // Upload to Supabase Storage (using dynamic folder/bucket)
-      console.log('📤 Uploading image to Supabase Storage:', { folder, fileName, fileSize: file.size });
-
       // Create new timeout for upload
       const uploadTimeoutPromise = new Promise<never>((_, reject) => {
         uploadTimeout = setTimeout(() => {
@@ -101,12 +99,31 @@ export const useImageUpload = (folder: string = 'menu-images') => {
         }, 30000); // 30 second timeout
       });
 
+      // Preferred: upload to ImageKit so images are served from its CDN instead
+      // of counting against Supabase storage egress.
+      if (isImageKitEnabled) {
+        const { url } = await Promise.race([
+          uploadToImageKit(file, folder, fileName),
+          uploadTimeoutPromise
+        ]);
+        if (uploadTimeout) {
+          clearTimeout(uploadTimeout);
+          uploadTimeout = null;
+        }
+        if (progressInterval) clearInterval(progressInterval);
+        setUploadProgress(100);
+        return url;
+      }
+
+      // Fallback when ImageKit is not configured: Supabase Storage (dynamic folder/bucket)
+      console.log('📤 Uploading image to Supabase Storage:', { folder, fileName, fileSize: file.size });
+
       // Now upload the file
       // Use the determined content type (may have been set from extension if MIME type was empty)
       const uploadPromise = supabase.storage
         .from(folder)
         .upload(fileName, file, {
-          cacheControl: '3600',
+          cacheControl: '31536000', // file names are unique, so cache for a year
           upsert: false,
           contentType: contentType || 'image/jpeg' // Fallback to jpeg if still empty
         });
@@ -167,6 +184,10 @@ export const useImageUpload = (folder: string = 'menu-images') => {
   };
 
   const deleteImage = async (imageUrl: string): Promise<void> => {
+    // ImageKit files can only be deleted with the private key (server-side);
+    // removing the reference is enough — the file can be cleaned up in the ImageKit dashboard.
+    if (isImageKitUrl(imageUrl)) return;
+
     try {
       // Extract file path from URL
       const urlParts = imageUrl.split('/');

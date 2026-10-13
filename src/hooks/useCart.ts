@@ -54,6 +54,8 @@ const loadPersistedIds = (): PersistedCartItem[] => {
   }
 };
 
+const CART_REFRESH_MIN_INTERVAL_MS = 2 * 60 * 1000;
+
 async function hydrateItems(persisted: PersistedCartItem[]): Promise<CartItem[]> {
   if (persisted.length === 0) return [];
   const productIds = Array.from(new Set(persisted.map((p) => p.product_id)));
@@ -323,33 +325,22 @@ export function useCart() {
     refreshRef.current = refreshCartPrices;
   }, [refreshCartPrices]);
 
-  // Live updates: re-hydrate the cart whenever any product/variation changes
-  // (e.g. an item sells out or an admin sets stock to 0) so the cart reflects
-  // real stock without the user reopening it.
+  // Re-hydrate the cart when the visitor returns to the tab so sold-out items
+  // and price changes show up — at most once per CART_REFRESH_MIN_INTERVAL_MS.
+  // (Checkout re-checks stock and the database re-validates prices anyway.)
   useEffect(() => {
     if (!hydrated) return;
-    const channelId = `cart-stock-realtime-${Date.now()}`;
-    const channel = supabase
-      .channel(channelId)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'products' },
-        () => refreshRef.current()
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'product_variations' },
-        () => refreshRef.current()
-      )
-      .subscribe();
+    let lastRefreshAt = Date.now();
 
-    const handleFocus = () => refreshRef.current();
-    window.addEventListener('focus', handleFocus);
-
-    return () => {
-      supabase.removeChannel(channel);
-      window.removeEventListener('focus', handleFocus);
+    const handleVisibilityChange = () => {
+      if (document.hidden) return;
+      if (Date.now() - lastRefreshAt < CART_REFRESH_MIN_INTERVAL_MS) return;
+      lastRefreshAt = Date.now();
+      refreshRef.current();
     };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [hydrated]);
 
   const dismissPriceUpdateNotice = () => setPricesUpdatedAt(null);

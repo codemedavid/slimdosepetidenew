@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Shield, Award, CheckCircle, X, ExternalLink, Download, Sparkles, ArrowLeft } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useCOAPageSetting } from '../hooks/useCOAPageSetting';
+import { optimizedImageUrl } from '../lib/imagekit';
 
 interface COAReport {
   id: string;
@@ -141,7 +142,9 @@ const COA: React.FC = () => {
                   onClick={() => setSelectedImage(report.image_url)}
                 >
                   <img
-                    src={report.image_url}
+                    src={optimizedImageUrl(report.image_url, 480, 90)}
+                    loading="lazy"
+                    decoding="async"
                     alt={`${report.product_name} Certificate of Analysis`}
                     className="w-full h-48 sm:h-56 md:h-64 lg:h-80 object-cover object-top"
                     onError={(e) => {
@@ -281,7 +284,7 @@ const COA: React.FC = () => {
               <X className="w-5 h-5 md:w-6 md:h-6" />
             </button>
             <img
-              src={selectedImage}
+              src={optimizedImageUrl(selectedImage, 1200, 90)}
               alt="Certificate of Analysis"
               className="w-full h-auto rounded-2xl md:rounded-3xl shadow-2xl"
               onClick={(e) => e.stopPropagation()}

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Plus, Edit, Trash2, Save, X, ArrowLeft, CreditCard, Upload } from 'lucide-react';
 import { usePaymentMethods, PaymentMethod } from '../hooks/usePaymentMethods';
 import ImageUpload from './ImageUpload';
+import { optimizedImageUrl } from '../lib/imagekit';
 
 interface PaymentMethodManagerProps {
   onBack: () => void;
@@ -344,7 +345,9 @@ const PaymentMethodManager: React.FC<PaymentMethodManagerProps> = ({ onBack }) =
                     <div className="flex items-center space-x-3 sm:space-x-4 w-full sm:w-auto">
                       <div className="flex-shrink-0">
                         <img
-                          src={method.qr_code_url}
+                          src={optimizedImageUrl(method.qr_code_url, 64)}
+                          loading="lazy"
+                          decoding="async"
                           alt={`${method.name} QR Code`}
                           className="w-12 h-12 sm:w-16 sm:h-16 rounded-lg border-2 border-navy-700/30 object-cover"
                           onError={(e) => {

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { cachedQuery, isAdminRoute } from '../lib/queryCache';
 import type { Product, ProductVariation } from '../types';
 import {
   mirrorProductCreate,
@@ -10,6 +11,45 @@ import {
   mirrorVariationUpdate,
 } from '../lib/convexMirror';
 
+async function fetchCatalog(): Promise<Product[]> {
+  const { data, error } = await supabase
+    .from('products')
+    .select('id, name, slug, description, category, base_price, raw_price, discount_price, discount_start_date, discount_end_date, discount_active, purity_percentage, molecular_weight, cas_number, sequence, storage_conditions, inclusions, stock_quantity, available, featured, image_url, safety_sheet_url, coa_url, created_at, updated_at')
+    .eq('available', true)
+    .order('featured', { ascending: false })
+    .order('name', { ascending: true });
+
+  if (error) throw error;
+
+  const productList = data || [];
+  const productIds = productList.map(p => p.id);
+
+  // Batch all variations into a single query (was N+1 per product)
+  const variationsByProduct = new Map<string, ProductVariation[]>();
+  if (productIds.length > 0) {
+    const { data: allVariations, error: variationsError } = await supabase
+      .from('product_variations')
+      .select('*')
+      .in('product_id', productIds)
+      .order('quantity_mg', { ascending: true });
+
+    if (variationsError) throw variationsError;
+
+    for (const v of allVariations || []) {
+      const list = variationsByProduct.get(v.product_id) || [];
+      list.push(v);
+      variationsByProduct.set(v.product_id, list);
+    }
+  }
+
+  const productsWithVariations = productList.map(product => ({
+    ...product,
+    variations: variationsByProduct.get(product.id) || [],
+  }));
+
+  return productsWithVariations;
+}
+
 export function useMenu() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -18,137 +58,21 @@ export function useMenu() {
   useEffect(() => {
     fetchProducts();
 
-    // Set up real-time subscription for product changes with unique channel name
-    const channelId = `products-realtime-${Date.now()}`;
-    const productsChannel = supabase
-      .channel(channelId)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'products'
-        },
-        (payload) => {
-          console.log('✅ Product changed:', payload);
-          fetchProducts(); // Refetch all products when any change occurs
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'product_variations'
-        },
-        (payload) => {
-          console.log('✅ Variation changed:', payload);
-          fetchProducts(); // Refetch all products when variations change
-        }
-      )
-      .subscribe((status) => {
-        console.log('📡 Real-time subscription status:', status);
-      });
-
-    // Refetch data when window regains focus (user switches back from admin)
-    // But only if we're not on the admin page to avoid interfering with forms
-    let focusRefreshTimeout: ReturnType<typeof setTimeout> | null = null;
-    const handleFocus = () => {
-      // Check if we're on admin page - if so, don't refresh
-      const isAdminPage = window.location.pathname === '/admin';
-      if (isAdminPage) {
-        console.log('👁️ Window focused on admin page - skipping refresh to avoid form interference');
-        return;
-      }
-
-      // Debounce focus refresh to avoid too frequent refreshes
-      if (focusRefreshTimeout) {
-        clearTimeout(focusRefreshTimeout);
-      }
-
-      focusRefreshTimeout = setTimeout(() => {
-        console.log('👁️ Window focused - refreshing products...');
-        fetchProducts();
-        focusRefreshTimeout = null;
-      }, 1000); // Wait 1 second before refreshing
-    };
-
-    // Also add visibility change handler for better cross-tab updates
-    // But skip if on admin page
+    // When the visitor comes back to the tab, refresh only if the cached catalog
+    // is older than the cache TTL (see lib/queryCache). The old realtime channel
+    // and unconditional focus refetch downloaded the whole catalog on every tab switch.
     const handleVisibilityChange = () => {
-      if (document.hidden) return;
-
-      const isAdminPage = window.location.pathname === '/admin';
-      if (isAdminPage) {
-        console.log('👁️ Tab became visible on admin page - skipping refresh');
-        return;
-      }
-
-      // Debounce visibility refresh
-      if (focusRefreshTimeout) {
-        clearTimeout(focusRefreshTimeout);
-      }
-
-      focusRefreshTimeout = setTimeout(() => {
-        console.log('👁️ Tab became visible - refreshing products...');
-        fetchProducts();
-        focusRefreshTimeout = null;
-      }, 1000);
+      if (document.hidden || isAdminRoute()) return;
+      fetchProducts();
     };
 
-    window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    // Cleanup subscriptions on unmount
-    return () => {
-      supabase.removeChannel(productsChannel);
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      if (focusRefreshTimeout) {
-        clearTimeout(focusRefreshTimeout);
-      }
-    };
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
-  const fetchProducts = async () => {
+  const fetchProducts = async (force = false) => {
     try {
-      setLoading(true);
-
-      const { data, error } = await supabase
-        .from('products')
-        .select('id, name, slug, description, category, base_price, raw_price, discount_price, discount_start_date, discount_end_date, discount_active, purity_percentage, molecular_weight, cas_number, sequence, storage_conditions, inclusions, stock_quantity, available, featured, image_url, safety_sheet_url, coa_url, created_at, updated_at')
-        .eq('available', true)
-        .order('featured', { ascending: false })
-        .order('name', { ascending: true });
-
-      if (error) throw error;
-
-      const productList = data || [];
-      const productIds = productList.map(p => p.id);
-
-      // Batch all variations into a single query (was N+1 per product)
-      let variationsByProduct = new Map<string, ProductVariation[]>();
-      if (productIds.length > 0) {
-        const { data: allVariations, error: variationsError } = await supabase
-          .from('product_variations')
-          .select('*')
-          .in('product_id', productIds)
-          .order('quantity_mg', { ascending: true });
-
-        if (variationsError) throw variationsError;
-
-        for (const v of allVariations || []) {
-          const list = variationsByProduct.get(v.product_id) || [];
-          list.push(v);
-          variationsByProduct.set(v.product_id, list);
-        }
-      }
-
-      const productsWithVariations = productList.map(product => ({
-        ...product,
-        variations: variationsByProduct.get(product.id) || [],
-      }));
-
+      const productsWithVariations = await cachedQuery('products', fetchCatalog, force ? { force } : undefined);
       setProducts(productsWithVariations);
       setError(null);
     } catch (err) {
@@ -158,6 +82,8 @@ export function useMenu() {
       setLoading(false);
     }
   };
+
+  const refreshProducts = () => fetchProducts(true);
 
   const addProduct = async (product: Omit<Product, 'id' | 'created_at' | 'updated_at'>) => {
     try {
@@ -313,7 +239,7 @@ export function useMenu() {
       mirrorVariationCreate(variation);
 
       // Refresh products to include new variation
-      await fetchProducts();
+      await refreshProducts();
       return { success: true, data };
     } catch (err) {
       console.error('Error adding variation:', err);
@@ -335,7 +261,7 @@ export function useMenu() {
       mirrorVariationUpdate(id, updates);
 
       // Refresh products to include updated variation
-      await fetchProducts();
+      await refreshProducts();
       return { success: true, data };
     } catch (err) {
       console.error('Error updating variation:', err);
@@ -355,7 +281,7 @@ export function useMenu() {
       mirrorVariationDelete(id);
 
       // Refresh products to remove variation
-      await fetchProducts();
+      await refreshProducts();
       return { success: true };
     } catch (err) {
       console.error('Error deleting variation:', err);
@@ -368,7 +294,7 @@ export function useMenu() {
     products,
     loading,
     error,
-    refreshProducts: fetchProducts,
+    refreshProducts,
     addProduct,
     updateProduct,
     deleteProduct,

@@ -5,6 +5,7 @@ import { trackEvent, identifyUser } from '../utils/analytics';
 import { useGlobalDiscount } from '../hooks/useGlobalDiscount';
 import { useSiteSettings } from '../hooks/useSiteSettings';
 import type { GlobalDiscount } from '../types';
+import { optimizedImageUrl } from '../lib/imagekit';
 
 const POPUP_DISMISSED_KEY = 'sldp_promo_popup_dismissed_at';
 const SUBSCRIBED_KEY = 'sldp_promo_subscribed';
@@ -239,7 +240,7 @@ const PromoSignup: React.FC = () => {
                 className={`block relative ${adminPopupLink && adminPopupLink !== 'none' ? 'cursor-pointer' : ''}`}
               >
                 <img
-                  src={adminPopupImage}
+                  src={optimizedImageUrl(adminPopupImage, 480)}
                   alt={adminPopupTitle || 'Promo'}
                   className="w-full max-h-56 object-cover"
                 />
