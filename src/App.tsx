@@ -8,18 +8,21 @@ import Cart from './components/Cart';
 import Checkout from './components/Checkout';
 import FloatingCartButton from './components/FloatingCartButton';
 import Footer from './components/Footer';
-import AdminDashboard from './components/AdminDashboard';
-import COA from './components/COA';
-import FAQ from './components/FAQ';
-import PeptideCalculator from './components/PeptideCalculator';
-import OrderTracking from './components/OrderTracking';
-import SmartGuide from './components/SmartGuide';
-import ArticleDetail from './components/ArticleDetail';
-import ProductPage from './components/ProductPage';
 import PromoSignup from './components/PromoSignup';
 import { useMenu } from './hooks/useMenu';
-
 import { supabase } from './lib/supabase';
+
+// Secondary pages are split into their own chunks so shoppers on the menu
+// don't download the admin panel and other routes they never open.
+const AdminDashboard = React.lazy(() => import('./components/AdminDashboard'));
+const COA = React.lazy(() => import('./components/COA'));
+const FAQ = React.lazy(() => import('./components/FAQ'));
+const PeptideCalculator = React.lazy(() => import('./components/PeptideCalculator'));
+const OrderTracking = React.lazy(() => import('./components/OrderTracking'));
+const SmartGuide = React.lazy(() => import('./components/SmartGuide'));
+const ArticleDetail = React.lazy(() => import('./components/ArticleDetail'));
+const ProductPage = React.lazy(() => import('./components/ProductPage'));
+
 
 // import { useCOAPageSetting } from './hooks/useCOAPageSetting';
 
@@ -171,6 +174,7 @@ function App() {
 
   return (
     <Router>
+      <React.Suspense fallback={<div className="min-h-screen" aria-busy="true" />}>
       <Routes>
         <Route path="/" element={<MainApp />} />
         <Route path="/coa" element={<COA />} />
@@ -183,6 +187,7 @@ function App() {
         {/* Catch-all product slug — must stay LAST so it doesn't shadow named routes */}
         <Route path="/:slug" element={<ProductPage />} />
       </Routes>
+      </React.Suspense>
     </Router>
   );
 }

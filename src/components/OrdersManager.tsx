@@ -132,10 +132,48 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ onBack }) => {
     }
   };
 
+  // Merge fetched rows into state (newest first) instead of replacing the whole list.
+  const mergeOrders = (changed: Order[]) => {
+    if (changed.length === 0) return;
+    setOrders(prev => {
+      const byId = new Map(prev.map(o => [o.id, o]));
+      changed.forEach(o => byId.set(o.id, o));
+      return Array.from(byId.values()).sort((a, b) => b.created_at.localeCompare(a.created_at));
+    });
+  };
+
+  // Re-reads one order after an admin action — the full list is ~1 MB and grows with every order.
+  const reloadOrder = async (orderId: string) => {
+    const { data, error } = await supabase.from('orders').select('*').eq('id', orderId).maybeSingle();
+    if (error) {
+      console.error('Error reloading order:', error);
+      return;
+    }
+    if (data) mergeOrders([data as Order]);
+  };
+
+  // Refresh only downloads orders created or changed since the newest one we already have.
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await loadOrders();
-    setTimeout(() => setIsRefreshing(false), 500);
+    try {
+      const lastSync = orders.reduce((max, o) => (o.updated_at > max ? o.updated_at : max), '');
+      if (!lastSync) {
+        await loadOrders();
+        return;
+      }
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .gte('updated_at', lastSync)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      mergeOrders((data || []) as Order[]);
+    } catch (error) {
+      console.error('Error refreshing orders:', error);
+      alert('Failed to refresh orders. Please try again.');
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 500);
+    }
   };
 
   const handleConfirmOrder = async (order: Order) => {
@@ -239,8 +277,8 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ onBack }) => {
       trackOrderStatus('confirmed', emailProps);
       trackPaymentStatus('paid', { ...emailProps, payment_status: 'paid' });
 
-      // Refresh orders and products
-      await loadOrders();
+      // Refresh this order and products
+      await reloadOrder(order.id);
       await refreshProducts();
 
       // Trigger custom event to refresh inventory sales data
@@ -272,7 +310,7 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ onBack }) => {
       moveOrderTelegramTopic(orderId, newStatus);
       const targetOrder = orders.find(o => o.id === orderId);
       trackOrderStatus(newStatus as OrderStatus, buildOrderEmailProps(targetOrder));
-      await loadOrders();
+      await reloadOrder(orderId);
       if (selectedOrder?.id === orderId) {
         setSelectedOrder({ ...selectedOrder, order_status: newStatus });
       }
@@ -340,7 +378,7 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ onBack }) => {
 
       if (error) throw error;
       mirrorOrderUpdateDetails(orderId, updates);
-      await loadOrders();
+      await reloadOrder(orderId);
 
       if (selectedOrder?.id === orderId) {
         setSelectedOrder({ ...selectedOrder, ...updates } as Order);

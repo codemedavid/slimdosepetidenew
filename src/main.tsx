@@ -1,6 +1,5 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ConvexProvider, ConvexReactClient } from 'convex/react';
 import { PostHogProvider } from 'posthog-js/react';
 import App from './App.tsx';
 import './index.css';
@@ -17,20 +16,18 @@ const posthogOptions = {
   defaults: '2025-05-24',
   capture_exceptions: true,
   debug: import.meta.env.MODE === 'development',
+  // Session replays should not ingest the browser console.
+  enable_recording_console_log: false,
+  // No web-vitals / network-timing events — page views and custom events still flow.
+  capture_performance: false,
 };
-
-const CONVEX_URL =
-  (import.meta.env.VITE_CONVEX_URL as string | undefined) ||
-  'https://blessed-cuttlefish-644.convex.cloud';
-
-const convex = new ConvexReactClient(CONVEX_URL);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <PostHogProvider apiKey={POSTHOG_KEY} options={posthogOptions}>
-      <ConvexProvider client={convex}>
-        <App />
-      </ConvexProvider>
+      {/* No ConvexProvider: nothing reads Convex in the browser, and its client kept a
+          websocket open for every visitor. Admin writes are mirrored over HTTP in lib/convexMirror. */}
+      <App />
     </PostHogProvider>
   </StrictMode>
 );
